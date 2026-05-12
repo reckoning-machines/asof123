@@ -1,0 +1,10 @@
+{
+  "provider": "quotes_feed",
+  "freshness": "FRESH",
+  "last_update_utc": "2026-05-12T13:44:58Z",
+  "metadata": {
+    "row_count": 9421,
+    "symbol_count": 3500,
+    "feed_label": "us_equities_consolidated"
+  }
+}

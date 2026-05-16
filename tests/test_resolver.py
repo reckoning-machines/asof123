@@ -20,6 +20,7 @@ from asof123.models import SourceStatus, TemporalContext
 from asof123.providers import ProviderReportError
 from asof123.requests import ResolveRequest
 from asof123.resolver import ResolverError, resolve
+from asof123.errors import ErrorReasonCode
 
 
 # Reference UTC times on 2026-05-12 (Tuesday) in America/New_York.
@@ -123,8 +124,22 @@ def test_missing_calendar_raises_resolver_error():
         market="XNYS",
         market_timezone="America/New_York",
     )
-    with pytest.raises(ResolverError, match="No calendar"):
+    with pytest.raises(ResolverError, match="UNKNOWN_MARKET"):
         resolve(request, {})
+
+
+def test_resolver_error_exposes_stable_reason_code_and_explanation():
+    request = ResolveRequest(
+        perspective=Perspective.LIVE,
+        market="XNYS",
+        market_timezone="America/New_York",
+    )
+    with pytest.raises(ResolverError) as exc_info:
+        resolve(request, {})
+
+    assert exc_info.value.reason_code is ErrorReasonCode.UNKNOWN_MARKET
+    assert "No calendar registered" in exc_info.value.explanation
+    assert str(exc_info.value).startswith("UNKNOWN_MARKET: ")
 
 
 def test_calendar_timezone_mismatch_raises_resolver_error():
@@ -134,7 +149,7 @@ def test_calendar_timezone_mismatch_raises_resolver_error():
         market="XNYS",
         market_timezone="Europe/London",
     )
-    with pytest.raises(ResolverError, match="market_timezone"):
+    with pytest.raises(ResolverError, match="CALENDAR_TIMEZONE_MISMATCH"):
         resolve(request, {"XNYS": calendar})
 
 
@@ -146,7 +161,7 @@ def test_calendar_market_mismatch_raises_resolver_error():
         market="XNAS",
         market_timezone="America/New_York",
     )
-    with pytest.raises(ResolverError, match="market"):
+    with pytest.raises(ResolverError, match="CALENDAR_MARKET_MISMATCH"):
         resolve(request, {"XNAS": calendar})
 
 
@@ -159,7 +174,7 @@ def test_duplicate_provider_names_raise_resolver_error():
         market="XNYS",
         market_timezone="America/New_York",
     )
-    with pytest.raises(ResolverError, match="Duplicate provider"):
+    with pytest.raises(ResolverError, match="DUPLICATE_PROVIDER_NAME"):
         resolve(request, {"XNYS": calendar}, [p1, p2])
 
 
@@ -183,7 +198,7 @@ def test_provider_report_error_becomes_failed_source_status():
     assert status.provider == "vendor_b"
 
 
-def test_canonical_request_resolves_to_canonical_state_canonical():
+def test_canonical_request_fails_closed_without_canonical_authority():
     calendar = XNYSCalendar()
     request = ResolveRequest(
         perspective=Perspective.CANONICAL,
@@ -191,10 +206,8 @@ def test_canonical_request_resolves_to_canonical_state_canonical():
         market_timezone="America/New_York",
     )
 
-    ctx = resolve(request, {"XNYS": calendar})
-
-    assert ctx.perspective is Perspective.CANONICAL
-    assert ctx.canonical_state is CanonicalState.CANONICAL
+    with pytest.raises(ResolverError, match="CANONICAL_UNSUPPORTED"):
+        resolve(request, {"XNYS": calendar})
 
 
 def test_executed_with_no_execution_provider_returns_unknown_with_reason():

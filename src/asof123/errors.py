@@ -1,0 +1,43 @@
+"""Typed public error helpers for asof123."""
+
+from __future__ import annotations
+
+from enum import Enum
+from typing import Any, Optional
+
+from pydantic import BaseModel, ConfigDict
+
+
+class ErrorReasonCode(str, Enum):
+    """Pinned machine-readable failure reason codes.
+
+    English `explanation` strings are advisory. Public integrations should
+    branch on these values, not on exception text or API messages.
+    """
+
+    CALENDAR_MARKET_MISMATCH = "CALENDAR_MARKET_MISMATCH"
+    CALENDAR_TIMEZONE_MISMATCH = "CALENDAR_TIMEZONE_MISMATCH"
+    CANONICAL_UNSUPPORTED = "CANONICAL_UNSUPPORTED"
+    CLI_ARGUMENT_ERROR = "CLI_ARGUMENT_ERROR"
+    DUPLICATE_PROVIDER_NAME = "DUPLICATE_PROVIDER_NAME"
+    EXECUTION_FACTS_UNAVAILABLE = "EXECUTION_FACTS_UNAVAILABLE"
+    INVALID_PROVIDER = "INVALID_PROVIDER"
+    INVALID_REQUEST = "INVALID_REQUEST"
+    INVALID_SNAPSHOT = "INVALID_SNAPSHOT"
+    NOT_IMPLEMENTED = "NOT_IMPLEMENTED"
+    PRICE_BASIS_UNRESOLVED = "PRICE_BASIS_UNRESOLVED"
+    PROVIDER_REPORT_FAILED = "PROVIDER_REPORT_FAILED"
+    UNKNOWN_MARKET = "UNKNOWN_MARKET"
+    VALIDATION_ERROR = "VALIDATION_ERROR"
+
+
+class ErrorResponse(BaseModel):
+    """Stable JSON shape for API and CLI failure payloads."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    error: str
+    reason_code: ErrorReasonCode
+    explanation: str
+    message: Optional[str] = None
+    details: Optional[Any] = None

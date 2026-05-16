@@ -3,7 +3,9 @@
 This is the smallest reference calendar that satisfies the
 `MarketCalendar` protocol. It covers regular weekday sessions, weekends,
 and a small hard-coded holiday set for 2025-2026. It does not model
-early closes, half-days, ad hoc closures, or full holiday calendars.
+full early-close sessions, half-days, ad hoc closures, or full holiday
+calendars. Known unsupported early-close dates and dates outside the
+supported holiday years fail closed as `CLOSED`.
 Full exchange-calendar coverage is out of scope for the open-source
 minimum slice; downstream callers that need it should plug in a richer
 implementation against the protocol.
@@ -24,6 +26,7 @@ from ..models import _require_utc
 
 _OPEN_TIME = time(9, 30)
 _CLOSE_TIME = time(16, 0)
+_SUPPORTED_YEARS: frozenset[int] = frozenset({2025, 2026})
 
 # Small hard-coded NYSE holiday set, sufficient for tests.
 # 2025 and 2026 only. Not a full exchange calendar.
@@ -54,16 +57,31 @@ _HOLIDAYS: frozenset[date] = frozenset(
     }
 )
 
+# Known XNYS early-close dates inside the supported 2025-2026 slice. The
+# minimal reference calendar does not model shortened sessions, so these fail
+# closed instead of pretending regular 09:30-16:00 rules apply.
+_UNSUPPORTED_EARLY_CLOSES: frozenset[date] = frozenset(
+    {
+        date(2025, 7, 3),
+        date(2025, 11, 28),
+        date(2025, 12, 24),
+        date(2026, 11, 27),
+        date(2026, 12, 24),
+    }
+)
+
 
 class XNYSCalendar:
     """Minimal NYSE / America/New_York reference calendar.
 
     Phases:
     - Saturday or Sunday in market_timezone -> `WEEKEND`.
+    - Date outside the supported holiday years -> `CLOSED`.
     - Date in `_HOLIDAYS` -> `HOLIDAY`.
+    - Known unsupported early-close date -> `CLOSED`.
     - Otherwise, before 09:30 ET -> `PRE_OPEN`,
-      09:30 ET through 16:00 ET -> `MARKET_OPEN`,
-      after 16:00 ET -> `POST_CLOSE`.
+      09:30 ET until before 16:00 ET -> `MARKET_OPEN`,
+      at or after 16:00 ET -> `POST_CLOSE`.
     """
 
     market: str = "XNYS"
@@ -76,8 +94,12 @@ class XNYSCalendar:
         local = self._to_local(now_utc)
         if local.weekday() >= 5:
             return MarketPhase.WEEKEND
+        if local.year not in _SUPPORTED_YEARS:
+            return MarketPhase.CLOSED
         if local.date() in _HOLIDAYS:
             return MarketPhase.HOLIDAY
+        if local.date() in _UNSUPPORTED_EARLY_CLOSES:
+            return MarketPhase.CLOSED
         local_t = local.time()
         if local_t < _OPEN_TIME:
             return MarketPhase.PRE_OPEN

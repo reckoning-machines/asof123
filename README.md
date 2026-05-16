@@ -277,12 +277,14 @@ paired with an explicit IANA timezone. There are no naive datetimes.
 asof123 is intended to be called in-process from any service that needs
 temporal semantics. A typical pre-trade call:
 
-    from asof123 import resolve_asof
+    from asof123 import ResolveRequest, XNYSCalendar, resolve
 
-    ctx = resolve_asof(
+    request = ResolveRequest(
         perspective="PRE_TRADE_INTENT",
         market="XNYS",
+        market_timezone="America/New_York",
     )
+    ctx = resolve(request, calendars={"XNYS": XNYSCalendar()})
 
     if ctx.market_phase != "MARKET_OPEN":
         raise RuntimeError(
@@ -308,7 +310,7 @@ and a single ontology, instead of being reinvented in every caller.
 
 ## Open-Source Boundary
 
-The open-source core of asof123 ships with:
+The open-source core of asof123 may include:
 
 - Timezone handling built on standard IANA tz data.
 - Basic market calendar support.
@@ -316,7 +318,7 @@ The open-source core of asof123 ships with:
 - Static SourceProvider implementations for tests and demos.
 - File-based SourceProvider implementations.
 - Simple Postgres freshness providers (read last-update timestamps from
-  a named table or query).
+  a named table or query) if added under the public contract.
 - A FastAPI reference application.
 - A CLI reference command.
 
@@ -343,7 +345,25 @@ under `examples/` (`examples/resolve_demo.py`,
 
 ## Status
 
-This repository ships a Python library, a CLI, a FastAPI reference
-app, and runnable example scripts. There is still no persistence, no
-auth, no scheduler, and no background worker. The chronological build
-reports under `docs/` describe how each layer was added.
+This repository ships a Python library, pinned public enums and models,
+a minimal resolver, a reference XNYS calendar, static and file-backed
+SourceProvider implementations, deterministic snapshot helpers, a CLI,
+a FastAPI reference app, runnable examples, and tests.
+
+Recent contract hardening added:
+
+- Typed public error payloads with stable `reason_code` values for API,
+  CLI, resolver, and provider failure paths.
+- Snapshot schema and semantic contract version fields, plus deterministic
+  snapshot payload hashing for replay and audit identity.
+- Explicit fail-closed handling for unsupported CANONICAL resolution until a
+  typed canonical authority boundary exists.
+- Calendar and timezone boundary contracts, including the limited XNYS
+  reference calendar semantics and future replay freeze requirements.
+- Runtime, standalone-repo, canonical-authority, market-calendar, error, and
+  snapshot contracts under `docs/`.
+
+There is still no persistence, no auth, no scheduler, no background worker,
+no live provider registry, no canonical authority implementation, and no
+persisted replay engine. The chronological build reports under `docs/`
+describe how each layer was added.

@@ -20,12 +20,15 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import FastAPI, Request, status
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from .calendar import MarketCalendar
 from .calendars import XNYSCalendar
 from .enums import Perspective, SourceFreshness
+from .errors import ErrorReasonCode, ErrorResponse
 from .models import AsOfSnapshot, SourceStatus, TemporalContext
 from .providers import ProviderReportError, SourceProvider
 from .requests import ResolveRequest
@@ -61,6 +64,14 @@ class SourceReportRequest(BaseModel):
         return v
 
 
+def _validation_details(exc: RequestValidationError) -> list[dict]:
+    details = []
+    for item in exc.errors():
+        if isinstance(item, dict):
+            details.append({k: v for k, v in item.items() if k != "ctx"})
+    return details
+
+
 def create_app(
     calendars: Optional[Mapping[str, MarketCalendar]] = None,
     providers: Optional[Iterable[SourceProvider]] = None,
@@ -84,9 +95,31 @@ def create_app(
     async def _resolver_error_handler(
         request: Request, exc: ResolverError
     ) -> JSONResponse:
+        payload = ErrorResponse(
+            error="RESOLVER_ERROR",
+            reason_code=exc.reason_code,
+            explanation=exc.explanation,
+            message=str(exc),
+        )
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
-            content={"error": "RESOLVER_ERROR", "message": str(exc)},
+            content=payload.model_dump(mode="json"),
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def _validation_error_handler(
+        request: Request, exc: RequestValidationError
+    ) -> JSONResponse:
+        payload = ErrorResponse(
+            error="VALIDATION_ERROR",
+            reason_code=ErrorReasonCode.VALIDATION_ERROR,
+            explanation="Request validation failed",
+            message="Request validation failed",
+            details=jsonable_encoder(_validation_details(exc)),
+        )
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            content=payload.model_dump(mode="json"),
         )
 
     @app.get("/asof/current", response_model=TemporalContext)
@@ -115,13 +148,19 @@ def create_app(
             if p.name in seen:
                 return JSONResponse(
                     status_code=status.HTTP_409_CONFLICT,
-                    content={
-                        "error": "DUPLICATE_PROVIDER_NAME",
-                        "message": (
+                    content=ErrorResponse(
+                        error="DUPLICATE_PROVIDER_NAME",
+                        reason_code=ErrorReasonCode.DUPLICATE_PROVIDER_NAME,
+                        explanation=(
                             f"Duplicate provider name {p.name!r}; each "
                             "SourceProvider must have a unique name"
                         ),
-                    },
+                        message=(
+                            f"{ErrorReasonCode.DUPLICATE_PROVIDER_NAME.value}: "
+                            f"Duplicate provider name {p.name!r}; each "
+                            "SourceProvider must have a unique name"
+                        ),
+                    ).model_dump(mode="json"),
                 )
             seen.add(p.name)
 
@@ -137,7 +176,7 @@ def create_app(
                 result[p.name] = SourceStatus(
                     provider=p.name,
                     freshness=SourceFreshness.FAILED,
-                    reason_code="PROVIDER_REPORT_FAILED",
+                    reason_code=ErrorReasonCode.PROVIDER_REPORT_FAILED.value,
                     explanation=message,
                 )
         return result
@@ -146,14 +185,20 @@ def create_app(
     def post_sources_report(body: SourceReportRequest) -> JSONResponse:
         return JSONResponse(
             status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            content={
-                "error": "NOT_IMPLEMENTED",
-                "message": (
+            content=ErrorResponse(
+                error="NOT_IMPLEMENTED",
+                reason_code=ErrorReasonCode.NOT_IMPLEMENTED,
+                explanation=(
                     "The reference app is read-only. Source reporting "
                     "requires a registry or persistence layer outside "
                     "this pass."
                 ),
-            },
+                message=(
+                    "The reference app is read-only. Source reporting "
+                    "requires a registry or persistence layer outside "
+                    "this pass."
+                ),
+            ).model_dump(mode="json"),
         )
 
     @app.post("/asof/snapshot", response_model=AsOfSnapshot)

@@ -65,7 +65,8 @@ In rough priority order, the next passes should be:
    executable.
 4. A reference MarketCalendar for XNYS (NYSE) sufficient to compute
    BusinessDate and MarketPhase deterministically for a given UTC instant,
-   with explicit handling of weekends, holidays, and early closes.
+   with explicit handling of weekends, holidays, and fail-closed handling
+   for unsupported early closes.
 5. A minimal in-memory resolver that, given a request, returns a
    TemporalContext or a fail-closed error. This is the smallest end-to-end
    slice that proves the contract.

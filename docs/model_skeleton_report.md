@@ -47,13 +47,15 @@ code was created. This pass is types only.
   are Pydantic v2 models. All use `ConfigDict(extra="forbid")` so the
   schemas are closed; extra fields cause validation errors, which protects
   the contract from silent shape drift.
-- `MarketIdentity` is also `frozen=True`. Once a market identity has been
-  resolved it should not be mutated on a TemporalContext in flight; this
-  catches that class of bug at runtime.
+- `MarketIdentity`, `SourceStatus`, `TemporalContext`, and `AsOfSnapshot`
+  are also frozen after validation. This prevents in-place mutation of
+  validated semantic models and protects snapshot/replay hashes from
+  post-construction drift.
 - `SourceStatus` carries optional `provider`, datetime fields, `reason_code`,
-  `explanation`, and a freeform `metadata: dict[str, Any]`. `metadata` is
-  intentionally typed loose because SourceProviders are pluggable; the
-  closed shape lives in the named fields.
+  `explanation`, and `metadata: dict[str, Any]`. `metadata` is intentionally
+  flexible because SourceProviders are pluggable, but it is validated to
+  contain only deterministic JSON-compatible values and is frozen after
+  validation.
 - `TemporalContext` reproduces the JSON example in the contract:
   `resolved_at_utc`, `perspective`, `market`, `market_timezone`,
   `business_date`, `market_phase`, `knowledge_cutoff_utc`, `price_basis`,
@@ -61,6 +63,7 @@ code was created. This pass is types only.
   `canonical_state`, `sources`, and the optional `reason_code` /
   `explanation` pair used by fail-closed responses.
 - `AsOfSnapshot` wraps a `TemporalContext` with `snapshot_id`,
+  `snapshot_schema_version`, `semantic_contract_version`, `hash_algorithm`,
   `captured_at_utc`, and optional `content_hash`. The snapshot intentionally
   embeds the full TemporalContext rather than referencing it by id, because
   the contract requires that snapshots be immutable and replay-safe.
@@ -87,7 +90,14 @@ Market code enforcement (`_require_uppercase_market`):
 
 Source dict enforcement (`_check_sources`):
 - Every key in `TemporalContext.sources` must be a non-empty string.
-  An empty source name is rejected.
+  An empty source name is rejected. The validated sources mapping is frozen.
+
+Metadata enforcement (`_check_metadata`):
+- Metadata keys must be strings.
+- Metadata values must be JSON-compatible primitives, lists, or dicts.
+- NaN, Infinity, sets, and arbitrary Python objects are rejected because
+  they would make snapshot serialization ambiguous or non-deterministic.
+- Validated metadata mappings are frozen and lists are converted to tuples.
 
 Optional-string non-empty enforcement:
 - `SourceStatus.provider`, `AsOfSnapshot.content_hash`: if present, must
@@ -130,6 +140,9 @@ the contract.
 - lowercase market (`xnys`) rejected
 - empty market rejected
 - empty source key rejected in TemporalContext.sources
+- SourceStatus metadata is frozen after validation
+- SourceStatus metadata rejects non-JSON values
+- SourceStatus metadata rejects non-finite floats
 - CANONICAL perspective with PROVISIONAL canonical_state rejected
 - CANONICAL perspective with CANONICAL canonical_state accepted
 - EXECUTED perspective with INTENDED execution_state rejected
@@ -144,6 +157,9 @@ the contract.
 - AsOfSnapshot rejects naive captured_at_utc
 - AsOfSnapshot rejects non-UTC captured_at_utc
 - AsOfSnapshot rejects empty content_hash
+- AsOfSnapshot rejects unknown snapshot schema versions
+- AsOfSnapshot rejects unknown semantic contract versions
+- AsOfSnapshot rejects unknown hash algorithms
 
 Total: 36 tests, all passing.
 

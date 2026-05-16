@@ -13,6 +13,7 @@ persist, or expose anything.
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
+import math
 from typing import Any, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -27,6 +28,49 @@ from .enums import (
     PublicationState,
     SourceFreshness,
 )
+
+
+SNAPSHOT_SCHEMA_VERSION = "asof123.snapshot.v1"
+SEMANTIC_CONTRACT_VERSION = "asof123.contract.v1"
+SNAPSHOT_HASH_ALGORITHM = "sha256"
+
+
+class _FrozenDict(dict):
+    """A dict that serializes normally but rejects mutation after validation."""
+
+    def _blocked(self, *args: Any, **kwargs: Any) -> None:
+        raise TypeError("validated mapping is immutable")
+
+    __setitem__ = _blocked
+    __delitem__ = _blocked
+    clear = _blocked
+    pop = _blocked
+    popitem = _blocked
+    setdefault = _blocked
+    update = _blocked
+
+
+def _freeze_json_value(value: Any, field_name: str) -> Any:
+    if value is None or isinstance(value, (str, bool)):
+        return value
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError(f"{field_name} must not contain NaN or Infinity")
+        return value
+    if isinstance(value, list):
+        return tuple(_freeze_json_value(item, field_name) for item in value)
+    if isinstance(value, dict):
+        frozen: dict[str, Any] = {}
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise ValueError(f"{field_name} keys must be strings")
+            frozen[key] = _freeze_json_value(item, field_name)
+        return _FrozenDict(frozen)
+    raise ValueError(
+        f"{field_name} must contain only JSON-compatible deterministic values"
+    )
 
 
 def _require_utc(value: datetime, field_name: str) -> datetime:
@@ -85,7 +129,7 @@ class MarketIdentity(BaseModel):
 
 
 class SourceStatus(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     provider: Optional[str] = None
     freshness: SourceFreshness
@@ -109,9 +153,14 @@ class SourceStatus(BaseModel):
             return v
         return _require_utc(v, info.field_name or "datetime")
 
+    @field_validator("metadata")
+    @classmethod
+    def _check_metadata(cls, v: dict[str, Any]) -> dict[str, Any]:
+        return _freeze_json_value(v, "metadata")
+
 
 class TemporalContext(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     resolved_at_utc: datetime
     perspective: Perspective
@@ -149,7 +198,7 @@ class TemporalContext(BaseModel):
         for key in v:
             if not isinstance(key, str) or not key:
                 raise ValueError("source names in sources must be non-empty strings")
-        return v
+        return _FrozenDict(v)
 
     @model_validator(mode="after")
     def _check_fail_closed(self) -> "TemporalContext":
@@ -195,9 +244,12 @@ class TemporalContext(BaseModel):
 
 
 class AsOfSnapshot(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     snapshot_id: str
+    snapshot_schema_version: str = SNAPSHOT_SCHEMA_VERSION
+    semantic_contract_version: str = SEMANTIC_CONTRACT_VERSION
+    hash_algorithm: str = SNAPSHOT_HASH_ALGORITHM
     captured_at_utc: datetime
     context: TemporalContext
     content_hash: Optional[str] = None
@@ -207,6 +259,35 @@ class AsOfSnapshot(BaseModel):
     def _check_snapshot_id(cls, v: str) -> str:
         if not v:
             raise ValueError("snapshot_id must be a non-empty string")
+        return v
+
+    @field_validator("snapshot_schema_version")
+    @classmethod
+    def _check_snapshot_schema_version(cls, v: str) -> str:
+        if v != SNAPSHOT_SCHEMA_VERSION:
+            raise ValueError(
+                "snapshot_schema_version must be "
+                f"{SNAPSHOT_SCHEMA_VERSION!r}"
+            )
+        return v
+
+    @field_validator("semantic_contract_version")
+    @classmethod
+    def _check_semantic_contract_version(cls, v: str) -> str:
+        if v != SEMANTIC_CONTRACT_VERSION:
+            raise ValueError(
+                "semantic_contract_version must be "
+                f"{SEMANTIC_CONTRACT_VERSION!r}"
+            )
+        return v
+
+    @field_validator("hash_algorithm")
+    @classmethod
+    def _check_hash_algorithm(cls, v: str) -> str:
+        if v != SNAPSHOT_HASH_ALGORITHM:
+            raise ValueError(
+                f"hash_algorithm must be {SNAPSHOT_HASH_ALGORITHM!r}"
+            )
         return v
 
     @field_validator("captured_at_utc")

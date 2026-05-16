@@ -54,13 +54,15 @@ reference implementation:
   for the given UTC instant. No roll-forward to the next business day
   on weekends or holidays; the date is just "the local calendar date".
 - `market_phase_for` returns `WEEKEND` for Saturday or Sunday,
-  `HOLIDAY` for any date in the hard-coded holiday set, `PRE_OPEN`
-  before 09:30 ET, `MARKET_OPEN` from 09:30 ET inclusive through 16:00
-  ET exclusive, and `POST_CLOSE` from 16:00 ET on.
+  `HOLIDAY` for any date in the hard-coded holiday set, `CLOSED` for
+  known unsupported early-close dates and dates outside the supported
+  2025-2026 holiday years, `PRE_OPEN` before 09:30 ET, `MARKET_OPEN`
+  from 09:30 ET inclusive until before 16:00 ET, and `POST_CLOSE` at
+  or after 16:00 ET.
 - The holiday set is a `frozenset[date]` with 20 entries covering 2025
-  and 2026. No half-days, no ad hoc closures, no early-close handling.
-  Anything more complete is deliberately out of scope and belongs in a
-  downstream calendar that satisfies the protocol.
+  and 2026. No shortened early-close sessions, no half-days, and no ad
+  hoc closures. Anything more complete is deliberately out of scope and
+  belongs in a downstream calendar that satisfies the protocol.
 
 ## Resolver Defaults
 
@@ -86,16 +88,12 @@ The defaults it picks:
     inspect provider metadata to derive execution state; that is a
     later layer.
 - `canonical_state`:
-  - `perspective == CANONICAL` -> `CANONICAL`.
+  - `perspective == CANONICAL` -> fail closed with `ResolverError`.
   - Otherwise -> `PROVISIONAL`.
 - `publication_state` is always `PUBLISHED` in the minimal slice. This
-  is the one place the resolver does not match the briefing word for
-  word ("PUBLISHED except CANONICAL unresolved cases"). The minimal
-  resolver has no canonical SourceProvider, so "unresolved" is not
-  detectable here; rather than silently inventing an unresolved state,
-  the resolver leaves `publication_state` as `PUBLISHED` and lets the
-  caller spot mismatches via `canonical_state` and `sources`. This is
-  flagged as a known follow-up below.
+  applies only after CANONICAL requests have been rejected. The minimal
+  resolver has no canonical SourceProvider, so it must not silently
+  assert `canonical_state=CANONICAL`; it fails closed instead.
 - `knowledge_cutoff_utc = request.knowledge_cutoff_utc` if provided,
   otherwise `now_utc`.
 - `reason_code` and `explanation` on the TemporalContext are populated
@@ -188,7 +186,8 @@ malformed context.
   `SourceStatus` with `freshness=FAILED`,
   `reason_code="PROVIDER_REPORT_FAILED"`, and the exception message in
   the explanation.
-- CANONICAL request returns `canonical_state=CANONICAL`.
+- CANONICAL request fails closed with `ResolverError` because the minimal
+  resolver has no canonical authority SourceProvider.
 - EXECUTED request with no execution provider returns
   `execution_state=UNKNOWN` with `reason_code` containing
   `"EXECUTION_FACTS_UNAVAILABLE"` and a non-empty explanation.
@@ -221,15 +220,12 @@ Total project test count: 85 passed (63 prior + 22 new).
 
 ## Assumptions Made
 
-- The minimal resolver always sets `publication_state = PUBLISHED`.
-  The brief mentioned "PUBLISHED except CANONICAL unresolved cases",
-  but the minimal slice has no canonical SourceProvider against which
-  to detect "unresolved", and silently inventing an unresolved state
-  would itself violate the fail-closed rule. When a real canonical
-  SourceProvider exists, the resolver can flip `publication_state` to
-  `NOT_PUBLISHED` (with reason / explanation) when the canonical
-  provider reports `NOT_PUBLISHED` for CANONICAL perspective. This is
-  the cleanest place to wire it in.
+- The minimal resolver sets `publication_state = PUBLISHED` only for
+  perspectives it can safely resolve. CANONICAL now fails closed before
+  a `TemporalContext` is returned because the minimal slice has no
+  canonical SourceProvider against which to detect publication state.
+  When a real canonical SourceProvider exists, the resolver can resolve
+  `CANONICAL` or fail with `NOT_PUBLISHED` semantics at that boundary.
 - `business_date_for` returns the local calendar date in
   `market_timezone`, with no roll-forward on weekends or holidays. The
   contract allows refinement, and a richer calendar can implement
@@ -261,7 +257,7 @@ adapters, in this order:
    Strict schema validation on the JSON, no network IO. Plus tests.
 3. `src/asof123/snapshot.py`: a `make_snapshot(context, snapshot_id)`
    helper that returns an `AsOfSnapshot` whose `content_hash` is a
-   stable hash of the canonical JSON of the context. Plus tests.
+   stable hash of the versioned snapshot payload. Plus tests.
 
 Still out of scope after that pass: FastAPI app, CLI entrypoint,
 persistence (writing snapshots to disk or to a database), scheduling,

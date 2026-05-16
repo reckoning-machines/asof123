@@ -21,7 +21,8 @@ Removed:
 Updated:
 - /Users/jedgore/dev/asof123/src/asof123/__init__.py
   - Added `StaticProvider`, `FileProvider`, `make_snapshot`, and
-    `canonicalize_context` to imports and `__all__`.
+    `canonicalize_context` to imports and `__all__`. Later snapshot
+    schema hardening also exported `canonicalize_snapshot_payload`.
   - Updated the module docstring to reflect the new public surface.
   - Preserved all prior exports. `from asof123.providers import
     ProviderReportError, SourceProvider` continues to work unchanged
@@ -123,9 +124,10 @@ modes are constructor-time only (`ValueError`).
 
 ## Snapshot Hashing Decisions
 
-`snapshot.py` exposes two symbols:
+`snapshot.py` exposes three snapshot helpers:
 
 - `canonicalize_context(context: TemporalContext) -> str`
+- `canonicalize_snapshot_payload(context: TemporalContext) -> str`
 - `make_snapshot(context: TemporalContext, snapshot_id: str) ->
   AsOfSnapshot`
 
@@ -143,16 +145,17 @@ calendar still get their `now_utc` from the request or from
 `datetime.now(timezone.utc)` propagated downward, and providers still
 do not read clocks.
 
-The snapshot embeds the full `TemporalContext` by reference (the brief
-calls for `context: TemporalContext`, and `AsOfSnapshot` stores it as a
-model field). The snapshot is fully validated by `AsOfSnapshot`'s own
-model validator before it is returned; an empty `snapshot_id` raises
+The snapshot embeds a validated copy of the full `TemporalContext`.
+This prevents later caller mutation of the original context from
+changing the snapshot's semantic payload after `content_hash` has been
+computed. The snapshot is fully validated by `AsOfSnapshot`'s own model
+validator before it is returned; an empty `snapshot_id` raises
 `pydantic.ValidationError`, not `ValueError`, and never produces a
 half-built snapshot.
 
 ## Deterministic Serialization Decisions
 
-`canonicalize_context` follows three rules in order:
+`canonicalize_context` follows these rules:
 
 1. `context.model_dump(mode="json")` produces a Python dict whose enum
    values are their string members and whose datetimes are ISO 8601 UTC
@@ -162,8 +165,16 @@ half-built snapshot.
    whitespace via tight separators, and emits UTF-8 directly. Sort
    ordering at every level (not just the top) is what guarantees that
    two byte-equal contexts produce two byte-equal canonical strings.
-3. SHA256 is computed over `canonical.encode("utf-8")`. UTF-8 is
-   explicit so callers cannot assume a different encoding by accident.
+
+`canonicalize_snapshot_payload` wraps the context with the hash-affecting
+snapshot versions before serialization:
+
+- `snapshot_schema_version`
+- `semantic_contract_version`
+- `context`
+
+SHA256 is computed over `canonicalize_snapshot_payload(context).encode("utf-8")`.
+UTF-8 is explicit so callers cannot assume a different encoding by accident.
 
 Properties enforced by tests:
 
@@ -174,6 +185,8 @@ Properties enforced by tests:
 - Tight separators: no `", "` and no `": "` appear in the canonical
   string. This is asserted directly.
 - Two snapshots from the same context have the same `content_hash`.
+- `content_hash` equals SHA256 over
+  `canonicalize_snapshot_payload(context).encode("utf-8")`.
 - Changing any field (perspective, price_basis, a source's freshness)
   changes the hash.
 - Building a snapshot does not mutate the input `TemporalContext`
@@ -213,8 +226,10 @@ network, no external services.
 
 `tests/test_snapshot.py` (9 tests):
 - `make_snapshot` returns a validated `AsOfSnapshot` with a 64-char
-  hex `content_hash`, UTC-aware `captured_at_utc`, and the input
-  context attached.
+  hex `content_hash`, UTC-aware `captured_at_utc`, and a validated copy
+  of the input context attached.
+- The snapshot carries `snapshot_schema_version`,
+  `semantic_contract_version`, and `hash_algorithm`.
 - Two snapshots from the same context have the same `content_hash`.
 - `canonicalize_context` is deterministic across calls.
 - Changing the context changes the hash.
@@ -265,19 +280,17 @@ Total project test count: 115 passed (85 prior + 30 new).
   (`from asof123.providers import SourceProvider, ProviderReportError`)
   is unchanged.
 - `StaticProvider.report` returns the stored `SourceStatus` by identity,
-  not by copy. The brief said "no mutation of returned status", and the
-  provider does not mutate it. If a caller mutates the returned status,
-  subsequent calls will see the mutation. Making the model frozen is a
-  contract-level decision that should be made for `SourceStatus` once,
-  not invented inside one provider implementation.
+  not by copy. `SourceStatus` is now frozen after validation, so callers
+  cannot mutate the returned model in place and change subsequent static
+  reports.
 - `FileProvider` re-reads the file on every call rather than caching.
   Caching introduces a refresh-policy question that belongs to a higher
   layer; the minimal provider has no opinion on it. Callers that need
   caching can wrap the provider, but the open-source minimum does not.
-- `canonicalize_context` uses `ensure_ascii=False` and an explicit
+- `canonicalize_snapshot_payload` uses `ensure_ascii=False` and an explicit
   UTF-8 encoding before hashing, matching the brief's UTF-8 requirement.
-  All current contract content is ASCII, but the canonical form is
-  deterministic for any UTF-8 input that `model_dump(mode="json")`
+  All current contract content is ASCII, but the canonical snapshot payload
+  is deterministic for any UTF-8 input that `model_dump(mode="json")`
   produces.
 - `make_snapshot` reads `datetime.now(timezone.utc)` for
   `captured_at_utc`. This is the one place in the package where wall-

@@ -36,6 +36,7 @@ from .enums import (
     PublicationState,
     SourceFreshness,
 )
+from .errors import ErrorReasonCode
 from .models import SourceStatus, TemporalContext
 from .providers import ProviderReportError, SourceProvider
 from .requests import ResolveRequest
@@ -44,11 +45,19 @@ from .requests import ResolveRequest
 class ResolverError(Exception):
     """Raised when the resolver cannot safely produce a TemporalContext.
 
-    Examples: unknown market (no calendar registered), calendar metadata
-    that disagrees with the request, duplicate provider name. Per
-    PRODUCT_CONTRACT.md section 13, the resolver fails closed rather
-    than guess.
+    `reason_code` is the stable machine-readable identity. `explanation`
+    is advisory English text. `str(error)` preserves the historical
+    "CODE: explanation" format for existing callers.
     """
+
+    def __init__(
+        self,
+        reason_code: ErrorReasonCode | str,
+        explanation: str,
+    ) -> None:
+        self.reason_code = ErrorReasonCode(reason_code)
+        self.explanation = explanation
+        super().__init__(f"{self.reason_code.value}: {self.explanation}")
 
 
 def _resolve_price_basis(
@@ -64,7 +73,7 @@ def _resolve_price_basis(
     if perspective in (Perspective.PRE_TRADE_INTENT, Perspective.PREVIEW):
         return PriceBasis.PRIOR_CLOSE, None
     return PriceBasis.UNKNOWN, (
-        "PRICE_BASIS_UNRESOLVED",
+        ErrorReasonCode.PRICE_BASIS_UNRESOLVED.value,
         f"No default price basis for perspective={perspective.value} "
         f"market_phase={market_phase.value}; minimal resolver",
     )
@@ -76,7 +85,7 @@ def _resolve_execution_state(
     if perspective != Perspective.EXECUTED:
         return ExecutionState.NOT_EXECUTED, None
     return ExecutionState.UNKNOWN, (
-        "EXECUTION_FACTS_UNAVAILABLE",
+        ErrorReasonCode.EXECUTION_FACTS_UNAVAILABLE.value,
         "No execution SourceProvider supplied; minimal resolver cannot "
         "assert an execution state for perspective=EXECUTED",
     )
@@ -96,20 +105,23 @@ def resolve(
     calendar = calendars.get(request.market)
     if calendar is None:
         raise ResolverError(
+            ErrorReasonCode.UNKNOWN_MARKET,
             f"No calendar registered for market={request.market!r}; "
-            "fail-closed per PRODUCT_CONTRACT.md section 11"
+            "fail-closed per PRODUCT_CONTRACT.md section 11",
         )
     if calendar.market != request.market:
         raise ResolverError(
+            ErrorReasonCode.CALENDAR_MARKET_MISMATCH,
             f"calendar.market={calendar.market!r} does not match "
             f"request.market={request.market!r}; calendar is registered "
-            "under the wrong key"
+            "under the wrong key",
         )
     if calendar.market_timezone != request.market_timezone:
         raise ResolverError(
+            ErrorReasonCode.CALENDAR_TIMEZONE_MISMATCH,
             f"calendar.market_timezone={calendar.market_timezone!r} does not "
             f"match request.market_timezone={request.market_timezone!r}; "
-            "see PRODUCT_CONTRACT.md section 11"
+            "see PRODUCT_CONTRACT.md section 11",
         )
 
     business_date = calendar.business_date_for(now_utc)
@@ -120,8 +132,9 @@ def resolve(
     for provider in providers:
         if provider.name in seen:
             raise ResolverError(
-                f"Duplicate provider name {provider.name!r}; "
-                "each SourceProvider must have a unique name"
+                ErrorReasonCode.DUPLICATE_PROVIDER_NAME,
+                f"Duplicate provider name {provider.name!r}; each "
+                "SourceProvider must have a unique name",
             )
         seen.add(provider.name)
         try:
@@ -131,7 +144,7 @@ def resolve(
             status = SourceStatus(
                 provider=provider.name,
                 freshness=SourceFreshness.FAILED,
-                reason_code="PROVIDER_REPORT_FAILED",
+                reason_code=ErrorReasonCode.PROVIDER_REPORT_FAILED.value,
                 explanation=message,
             )
         sources[provider.name] = status
@@ -142,11 +155,15 @@ def resolve(
     execution_state, execution_reason = _resolve_execution_state(
         request.perspective
     )
-    canonical_state = (
-        CanonicalState.CANONICAL
-        if request.perspective == Perspective.CANONICAL
-        else CanonicalState.PROVISIONAL
-    )
+    if request.perspective == Perspective.CANONICAL:
+        raise ResolverError(
+            ErrorReasonCode.CANONICAL_UNSUPPORTED,
+            "minimal resolver has no canonical authority SourceProvider "
+            "and cannot assert "
+            "canonical_state=CANONICAL; fail-closed per "
+            "PRODUCT_CONTRACT.md section 10",
+        )
+    canonical_state = CanonicalState.PROVISIONAL
     publication_state = PublicationState.PUBLISHED
 
     reasons = [r for r in (price_reason, execution_reason) if r is not None]

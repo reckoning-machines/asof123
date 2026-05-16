@@ -34,6 +34,7 @@ from pydantic import ValidationError
 
 from .calendars import XNYSCalendar
 from .enums import Perspective
+from .errors import ErrorReasonCode, ErrorResponse
 from .providers import FileProvider
 from .requests import ResolveRequest
 from .resolver import ResolverError, resolve
@@ -121,23 +122,56 @@ def _print_json(payload: object, stream) -> None:
     stream.write("\n")
 
 
+def _print_error(
+    stream,
+    *,
+    error: str,
+    reason_code: ErrorReasonCode,
+    explanation: str,
+    details: object = None,
+) -> None:
+    payload = ErrorResponse(
+        error=error,
+        reason_code=reason_code,
+        explanation=explanation,
+        details=details,
+    )
+    _print_json(payload.model_dump(mode="json"), stream)
+
+
 def _cmd_resolve(args: argparse.Namespace, stdout, stderr) -> int:
     try:
         request = _build_request(args)
     except ValidationError as exc:
-        stderr.write(f"error: invalid request: {exc.errors()}\n")
+        _print_error(
+            stderr,
+            error="VALIDATION_ERROR",
+            reason_code=ErrorReasonCode.INVALID_REQUEST,
+            explanation="Invalid resolve request",
+            details=exc.errors(include_context=False),
+        )
         return 2
     try:
         providers = _build_providers(args)
     except ValueError as exc:
-        stderr.write(f"error: invalid provider: {exc}\n")
+        _print_error(
+            stderr,
+            error="VALIDATION_ERROR",
+            reason_code=ErrorReasonCode.INVALID_PROVIDER,
+            explanation=str(exc),
+        )
         return 2
 
     calendars = {"XNYS": XNYSCalendar()}
     try:
         ctx = resolve(request, calendars, providers)
     except ResolverError as exc:
-        stderr.write(f"error: resolver failed: {exc}\n")
+        _print_error(
+            stderr,
+            error="RESOLVER_ERROR",
+            reason_code=exc.reason_code,
+            explanation=exc.explanation,
+        )
         return 2
 
     _print_json(ctx.model_dump(mode="json"), stdout)
@@ -148,25 +182,47 @@ def _cmd_snapshot(args: argparse.Namespace, stdout, stderr) -> int:
     try:
         request = _build_request(args)
     except ValidationError as exc:
-        stderr.write(f"error: invalid request: {exc.errors()}\n")
+        _print_error(
+            stderr,
+            error="VALIDATION_ERROR",
+            reason_code=ErrorReasonCode.INVALID_REQUEST,
+            explanation="Invalid resolve request",
+            details=exc.errors(include_context=False),
+        )
         return 2
     try:
         providers = _build_providers(args)
     except ValueError as exc:
-        stderr.write(f"error: invalid provider: {exc}\n")
+        _print_error(
+            stderr,
+            error="VALIDATION_ERROR",
+            reason_code=ErrorReasonCode.INVALID_PROVIDER,
+            explanation=str(exc),
+        )
         return 2
 
     calendars = {"XNYS": XNYSCalendar()}
     try:
         ctx = resolve(request, calendars, providers)
     except ResolverError as exc:
-        stderr.write(f"error: resolver failed: {exc}\n")
+        _print_error(
+            stderr,
+            error="RESOLVER_ERROR",
+            reason_code=exc.reason_code,
+            explanation=exc.explanation,
+        )
         return 2
 
     try:
         snapshot = make_snapshot(ctx, args.snapshot_id)
     except ValidationError as exc:
-        stderr.write(f"error: invalid snapshot: {exc.errors()}\n")
+        _print_error(
+            stderr,
+            error="VALIDATION_ERROR",
+            reason_code=ErrorReasonCode.INVALID_SNAPSHOT,
+            explanation="Invalid snapshot request",
+            details=exc.errors(include_context=False),
+        )
         return 2
 
     _print_json(snapshot.model_dump(mode="json"), stdout)
@@ -177,9 +233,14 @@ def _cmd_serve(args: argparse.Namespace, stdout, stderr) -> int:
     try:
         import uvicorn  # noqa: F401
     except ImportError:
-        stderr.write(
-            "error: uvicorn is not installed; install with "
-            "'pip install asof123[serve]' or add uvicorn manually\n"
+        _print_error(
+            stderr,
+            error="VALIDATION_ERROR",
+            reason_code=ErrorReasonCode.NOT_IMPLEMENTED,
+            explanation=(
+                "uvicorn is not installed; install with "
+                "'pip install asof123[serve]' or add uvicorn manually"
+            ),
         )
         return 2
 

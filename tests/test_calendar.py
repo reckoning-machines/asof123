@@ -54,6 +54,21 @@ def test_xnys_known_holiday_returns_holiday():
     assert cal.market_phase_for(_NEW_YEARS_UTC) is MarketPhase.HOLIDAY
 
 
+def test_xnys_known_unsupported_early_close_fails_closed():
+    cal = XNYSCalendar()
+    # 2026-11-27 is the Friday after Thanksgiving, a known early-close date.
+    # The reference calendar does not model shortened sessions, so it fails
+    # closed instead of applying regular-session rules.
+    utc = datetime(2026, 11, 27, 19, 0, 0, tzinfo=timezone.utc)  # 14:00 ET
+    assert cal.market_phase_for(utc) is MarketPhase.CLOSED
+
+
+def test_xnys_outside_supported_holiday_years_fails_closed():
+    cal = XNYSCalendar()
+    utc = datetime(2027, 5, 12, 14, 0, 0, tzinfo=timezone.utc)
+    assert cal.market_phase_for(utc) is MarketPhase.CLOSED
+
+
 def test_xnys_business_date_in_market_timezone():
     cal = XNYSCalendar()
     assert cal.business_date_for(_OPEN_UTC) == _TUESDAY
@@ -64,6 +79,26 @@ def test_xnys_business_date_late_utc_crosses_into_next_local_day():
     # 04:00 UTC on May 13 == 00:00 EDT on May 13, so business_date is May 13.
     utc = datetime(2026, 5, 13, 4, 0, 0, tzinfo=timezone.utc)
     assert cal.business_date_for(utc) == date(2026, 5, 13)
+
+
+def test_xnys_dst_spring_forward_day_is_deterministic():
+    cal = XNYSCalendar()
+    # 2026-03-09 is the first Monday after US DST starts in 2026.
+    pre_open = datetime(2026, 3, 9, 13, 0, 0, tzinfo=timezone.utc)  # 09:00 ET
+    open_time = datetime(2026, 3, 9, 14, 0, 0, tzinfo=timezone.utc)  # 10:00 ET
+    assert cal.business_date_for(pre_open) == date(2026, 3, 9)
+    assert cal.market_phase_for(pre_open) is MarketPhase.PRE_OPEN
+    assert cal.market_phase_for(open_time) is MarketPhase.MARKET_OPEN
+
+
+def test_xnys_dst_fall_back_day_is_deterministic():
+    cal = XNYSCalendar()
+    # 2026-11-02 is the first Monday after US DST ends in 2026.
+    pre_open = datetime(2026, 11, 2, 14, 0, 0, tzinfo=timezone.utc)  # 09:00 ET
+    open_time = datetime(2026, 11, 2, 15, 0, 0, tzinfo=timezone.utc)  # 10:00 ET
+    assert cal.business_date_for(pre_open) == date(2026, 11, 2)
+    assert cal.market_phase_for(pre_open) is MarketPhase.PRE_OPEN
+    assert cal.market_phase_for(open_time) is MarketPhase.MARKET_OPEN
 
 
 def test_xnys_naive_datetime_rejected():

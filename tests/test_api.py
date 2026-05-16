@@ -127,6 +127,28 @@ def test_post_asof_resolve_with_invalid_live_as_of_utc_returns_422():
     }
     response = client.post("/asof/resolve", json=payload)
     assert response.status_code == 422
+    body = response.json()
+    assert body["error"] == "VALIDATION_ERROR"
+    assert body["reason_code"] == "VALIDATION_ERROR"
+    assert body["explanation"] == "Request validation failed"
+    assert "details" in body
+
+
+def test_post_asof_resolve_canonical_fails_closed_without_authority():
+    app = create_app()
+    client = TestClient(app)
+    payload = {
+        "perspective": "CANONICAL",
+        "market": "XNYS",
+        "market_timezone": "America/New_York",
+    }
+    response = client.post("/asof/resolve", json=payload)
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error"] == "RESOLVER_ERROR"
+    assert body["reason_code"] == "CANONICAL_UNSUPPORTED"
+    assert "canonical authority" in body["explanation"]
+    assert "CANONICAL_UNSUPPORTED" in body["message"]
 
 
 def test_missing_calendar_returns_400_with_resolver_error():
@@ -141,6 +163,9 @@ def test_missing_calendar_returns_400_with_resolver_error():
     assert response.status_code == 400
     body = response.json()
     assert body["error"] == "RESOLVER_ERROR"
+    assert body["reason_code"] == "UNKNOWN_MARKET"
+    assert "No calendar registered" in body["explanation"]
+    assert "UNKNOWN_MARKET" in body["message"]
     assert "XNYS" in body["message"]
 
 
@@ -190,6 +215,8 @@ def test_get_sources_status_with_duplicate_provider_names_returns_409():
     assert response.status_code == 409
     body = response.json()
     assert body["error"] == "DUPLICATE_PROVIDER_NAME"
+    assert body["reason_code"] == "DUPLICATE_PROVIDER_NAME"
+    assert "vendor_a" in body["explanation"]
     assert "vendor_a" in body["message"]
 
 
@@ -208,6 +235,8 @@ def test_post_sources_report_returns_501_with_explanation():
     assert response.status_code == 501
     body = response.json()
     assert body["error"] == "NOT_IMPLEMENTED"
+    assert body["reason_code"] == "NOT_IMPLEMENTED"
+    assert "read-only" in body["explanation"]
     assert "read-only" in body["message"]
 
 
@@ -239,3 +268,6 @@ def test_post_asof_snapshot_rejects_empty_snapshot_id_via_422():
     payload = {"snapshot_id": "", "context": ctx.model_dump(mode="json")}
     response = client.post("/asof/snapshot", json=payload)
     assert response.status_code == 422
+    body = response.json()
+    assert body["error"] == "VALIDATION_ERROR"
+    assert body["reason_code"] == "VALIDATION_ERROR"

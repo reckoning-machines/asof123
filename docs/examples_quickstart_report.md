@@ -54,7 +54,7 @@ JSON sorted by key. No argparse, no network, no environment loading.
 `examples/snapshot_demo.py` is the same flow with a single extra step:
 `snapshot = make_snapshot(context, snapshot_id="demo_snapshot")`, then
 prints the snapshot. The snapshot's `content_hash` is a deterministic
-SHA256 over the canonical JSON of the context.
+SHA256 over the versioned snapshot payload.
 
 Both scripts resolve their fixture path via
 `Path(__file__).resolve().parent / "source_status_quotes.json"` so

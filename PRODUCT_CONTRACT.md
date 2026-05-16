@@ -130,7 +130,9 @@ names exactly.
 
 - AsOfSnapshot
   An immutable, serializable record of a resolved TemporalContext, intended
-  for replay, audit, and reproducibility.
+  for replay, audit, and reproducibility. Carries explicit snapshot schema
+  and semantic contract versions so persisted snapshots cannot silently be
+  reinterpreted under different rules.
 
 ## 4. Required Initial Perspectives
 
@@ -304,27 +306,54 @@ explicit unresolved or failed status. It must not silently guess, must not
 fall back to wall-clock now, and must not assume a default perspective or
 market phase.
 
+Core public models and resolver request models must require callers to
+provide the market, market_timezone, and perspective needed to resolve a
+TemporalContext. The resolver must not silently supply these values on
+behalf of an underspecified request.
+
+The reference CLI and reference HTTP app may expose documented convenience
+defaults for interactive use, such as LIVE / XNYS / America/New_York. These
+defaults are surface-level conveniences only. They are not core resolver
+semantics, they must be visible in help text or API parameter defaults, and
+they must still pass through the same request validation as explicit caller
+input.
+
+Resolving a current context is allowed when the caller explicitly chooses a
+current-oriented surface or perspective, such as GET /asof/current or a LIVE
+ResolveRequest with no as_of_utc. In that case, the implementation may read
+datetime.now(timezone.utc) to set the resolution instant. That is different
+from a forbidden silent wall-clock fallback. REPLAY and HISTORICAL requests
+must provide as_of_utc and knowledge_cutoff_utc; they must not substitute the
+current wall-clock instant when those fields are missing. CANONICAL requests
+must resolve against canonical publication semantics, not an arbitrary
+wall-clock fallback.
+
 Concretely:
 
 - If a required SourceProvider has not reported and no fallback is
   configured, the resolved SourceStatus must be MISSING or FAILED, not
   FRESH.
-- If a MarketCalendar is unknown, the resolved MarketPhase must be CLOSED
-  with an explicit reason, not MARKET_OPEN.
+- If a MarketCalendar is unknown, the resolver must fail closed with an
+  explicit reason, not MARKET_OPEN. The core Python resolver may raise a
+  typed ResolverError for this condition. API and CLI surfaces must translate
+  that error into an explicit failed response or process error that carries a
+  machine-readable reason and human-readable explanation.
 - If a Perspective cannot be determined from the request, the response
   must be an explicit error, not a guessed PREVIEW or LIVE.
 - Every fail-closed response must carry a machine-readable reason code and
   a human-readable explanation.
 
-## 14. API Direction
+## 14. API Reference Surface
 
-The following endpoints describe the intended shape of the future HTTP
-API. They are not yet implemented; they are listed here so the contract
-constrains future work.
+The standalone open-source repository may include a FastAPI reference
+application exposing the following HTTP shape. The reference app is not an
+orchestrator, scheduler, source registry, persistence layer, or production
+auth boundary. It exists to demonstrate the contract over HTTP.
 
 - GET /asof/current
   Resolve the current TemporalContext for a given perspective, market, and
-  caller identity.
+  caller identity. The reference app may document convenience defaults for
+  interactive use, but those defaults are not core resolver defaults.
 
 - POST /asof/resolve
   Resolve a TemporalContext for an explicit request body. Supports
@@ -345,7 +374,33 @@ constrains future work.
 All request and response bodies must obey the UTC and timezone rule in
 section 12 and the fail-closed rule in section 13.
 
-## 15. Open-Source Boundary
+## 15. Implemented Reference Surfaces
+
+The standalone open-source repository may include the following implemented
+reference surfaces, provided they continue to obey this contract:
+
+- Python package.
+- Pinned enum modules.
+- Public model modules.
+- Resolver request models.
+- Minimal resolver.
+- SourceProvider protocol.
+- Static SourceProvider.
+- File SourceProvider.
+- Snapshot helper.
+- XNYS reference calendar.
+- FastAPI reference app.
+- CLI.
+- Examples.
+- Tests.
+
+These surfaces are reference implementations of the temporal semantics
+contract. They must not broaden asof123 into scheduling, orchestration,
+warehouse storage, temporal database behavior, OMS/PMS behavior, broker
+adapter behavior, proprietary warehouse integration, or internal fund system
+logic.
+
+## 16. Open-Source Boundary
 
 The open-source core of asof123 may ship with:
 
@@ -375,68 +430,455 @@ open-source core:
 This boundary protects the open-source core from depending on commercial
 licenses and from leaking proprietary schemas.
 
-## 16. README Seed Language
+## 17. README Relationship
 
-The following text is a seed for README.md. It may be copied and lightly
-edited when README.md is created.
+README.md is an introduction to the project and may contain examples,
+quickstart notes, and current implementation status. It must remain
+subordinate to this contract. If README.md and PRODUCT_CONTRACT.md ever
+disagree, this contract wins and README.md must be corrected.
 
----
+## 18. Coding Discipline
 
-asof123
-
-Every bug in finance software is secretly an "as of" bug.
-
-In finance and institutional software, almost every hard bug eventually
-turns out to be a disagreement about "as of". One service uses wall-clock
-now. Another uses the prior business close. A preview screen quietly
-mixes in live prices. A replay job sees data that did not exist on the
-date being replayed. Each team writes its own ad hoc rules for business
-date, market phase, freshness, and publication. The rules drift, and the
-bugs are blamed on data quality.
-
-asof123 is a temporal semantics layer. It does not tell you what time it
-is. It tells you what "as of" means in a given call: which business date,
-which market phase, which perspective (preview, live, executed,
-canonical, replay, historical), which sources are fresh or stale or not
-yet published, and which knowledge cutoff and price basis apply. External
-systems report facts. asof123 resolves temporal meaning.
-
-Example of a resolved TemporalContext:
-
-    {
-      "resolved_at_utc": "2026-05-12T18:30:00Z",
-      "perspective": "LIVE",
-      "market": "XNYS",
-      "market_timezone": "America/New_York",
-      "business_date": "2026-05-12",
-      "market_phase": "MARKET_OPEN",
-      "knowledge_cutoff_utc": "2026-05-12T18:30:00Z",
-      "price_basis": "LAST_TRADE",
-      "publication_state": "PUBLISHED",
-      "canonical_state": "PROVISIONAL",
-      "sources": {
-        "equities_quotes": {
-          "freshness": "FRESH",
-          "last_update_utc": "2026-05-12T18:29:58Z"
-        },
-        "corporate_actions": {
-          "freshness": "PRIOR_CLOSE",
-          "last_update_utc": "2026-05-11T21:05:00Z"
-        }
-      }
-    }
-
----
-
-## 17. Coding Discipline
-
-- No code is written in this pass.
-- No application scaffolding is created in this pass.
-- The only artifact produced in this pass is this PRODUCT_CONTRACT.md and
-  an accompanying short report under docs/.
 - All documents use plain ASCII punctuation only. No smart quotes, em
   dashes, ellipses, or other non-ASCII typography.
 - The contract must remain direct, concrete, and implementation-guiding.
   It is a working specification, not marketing copy.
 - Future changes to this contract must be made by editing this file, not
   by adding parallel documents that quietly disagree with it.
+
+## 19. Snapshot Schema and Replay Contract
+
+AsOfSnapshot is the immutable audit and replay artifact. Snapshot identity
+has two layers:
+
+- Record identity: snapshot_id identifies one captured audit record.
+- Semantic content identity: hash_algorithm plus content_hash identifies
+  the versioned semantic payload.
+
+The current snapshot schema version is:
+
+    asof123.snapshot.v1
+
+The current semantic contract version is:
+
+    asof123.contract.v1
+
+The current hash algorithm is:
+
+    sha256
+
+The hash-affecting payload is exactly:
+
+- snapshot_schema_version
+- semantic_contract_version
+- context
+
+The audit-only fields are:
+
+- snapshot_id
+- captured_at_utc
+- hash_algorithm
+- content_hash
+
+captured_at_utc is not hash-affecting. It records when the snapshot record
+was materialized, not what semantic TemporalContext it represents.
+
+snapshot_schema_version and semantic_contract_version are hash-affecting.
+The same TemporalContext under a different serialization schema or semantic
+contract must not share the same semantic content identity.
+
+Canonical snapshot payload serialization must use:
+
+- Pydantic JSON-mode model data.
+- JSON object keys sorted with sort_keys=True.
+- Tight JSON separators: comma and colon, with no inserted spaces.
+- Enum values serialized as their pinned string values.
+- UTC datetime fields serialized by Pydantic JSON mode after UTC validation.
+- Null values included when present in the model dump.
+- Only deterministic JSON-compatible metadata values.
+
+Future persisted replay must not silently reinterpret history. It must either:
+
+- reproduce the original interpretation under the recorded schema,
+  semantic contract, calendar, timezone, and provider regimes; or
+- explicitly declare reinterpretation under a newer regime.
+
+Before persistent replay is introduced, persisted snapshots must record any
+calendar, timezone, provider, and source artifact identities needed to
+reproduce their interpretation. At minimum, future persisted replay designs
+must define:
+
+- calendar_id or equivalent calendar identity;
+- calendar_version or equivalent rule publication version;
+- timezone database identity/version when timezone conversion affects
+  historical meaning;
+- provider_id for each source assertion;
+- provider_version or source artifact version/hash for provider-backed facts;
+- assertion or observation instants for provider freshness claims.
+
+Forbidden future behavior:
+
+- Recomputing historical market phase from a newer calendar without
+  explicit reinterpretation mode.
+- Recomputing historical source freshness from live provider state.
+- Treating enum additions, renames, or semantic changes as replay-neutral.
+- Changing the hash-affecting payload without changing
+  snapshot_schema_version.
+- Changing the meaning of any hash-affecting value without changing
+  semantic_contract_version.
+
+## 20. Calendar, Timezone, and Provider Freeze Contract
+
+Current in-memory snapshots do not implement persisted replay execution. The
+v1 snapshot hash remains limited to snapshot_schema_version,
+semantic_contract_version, and context. Calendar, timezone, and provider
+freeze metadata are required before any future persisted replay execution is
+allowed.
+
+Future persisted replay must distinguish two operations:
+
+- Reproduce original interpretation: use the same recorded calendar,
+  timezone, provider, schema, and semantic regimes that produced the original
+  snapshot.
+- Reinterpret under newer semantics: explicitly declare the newer calendar,
+  timezone, provider, schema, or semantic regime and produce a distinct
+  result.
+
+Silent reinterpretation is forbidden.
+
+Calendar freeze metadata must identify the rules used for market-facing
+interpretation. A future replay-safe snapshot or replay envelope must pin, at
+minimum:
+
+- calendar_id;
+- calendar_version;
+- market;
+- market_timezone;
+- market definition version when market identity rules can change;
+- exchange rule version when exchange session rules can change;
+- holiday table version when holidays are table-driven;
+- early-close version when early closes are modeled;
+- ad hoc closure version when ad hoc closures are modeled.
+
+Timezone freeze metadata must identify the timezone rules used for
+market-facing interpretation. A future replay-safe snapshot or replay
+envelope must pin, at minimum:
+
+- the explicit IANA timezone name used for interpretation;
+- tzdata_version or equivalent timezone rule identity;
+- any runtime timezone source identity when not supplied by a pinned tzdata
+  package.
+
+Provider freeze metadata must identify the source facts used by the resolver.
+A future replay-safe snapshot or replay envelope must pin, at minimum, for
+each provider-backed assertion:
+
+- provider_id;
+- provider_version;
+- provider schema version when provider output schema can change;
+- provider semantic contract when provider meaning can change;
+- immutable source artifact hash or source version;
+- assertion, observation, or publication instant used for freshness claims.
+
+For future persisted replay, calendar, timezone, and provider freeze metadata
+are part of the replay interpretation boundary and must be hash-affecting in
+the persisted replay payload or in a linked immutable replay envelope whose
+own identity is hash-addressed. For current in-memory snapshots, these fields
+are not present and are not part of the v1 content_hash.
+
+Advisory metadata may exist outside the hash only if it cannot change replay
+meaning. Any metadata that can alter market phase, business date, source
+freshness, publication state, price basis, canonical state, or admissibility
+must be hash-affecting before persisted replay is allowed.
+
+Future persistence guardrails:
+
+- No persisted replay execution may be introduced until the freeze envelope
+  is defined in code and tests.
+- No calendar provider may silently upgrade historical rules for reproduction
+  mode.
+- No timezone conversion may silently use an unrecorded rule source for
+  reproduction mode.
+- No provider-backed replay may call live provider state for reproduction
+  mode.
+- Reinterpretation mode must preserve the original snapshot and original
+  content_hash and must emit a distinct result under the declared newer
+  regime.
+
+## 21. Public Error Contract
+
+Fail-closed errors must be explicit, machine-readable, deterministic, and
+stable across public surfaces.
+
+Stable fields:
+
+- reason_code: pinned machine-readable failure identity.
+- error: broad surface/category identifier.
+- HTTP status code for API responses.
+- CLI exit code.
+- SourceStatus.freshness when provider failures are embedded as data.
+
+Advisory fields:
+
+- explanation: English detail for humans.
+- message: backward-compatible English text, when present.
+- details: structured validation diagnostics whose exact shape may follow
+  Pydantic/FastAPI validation details.
+
+Consumers must not parse explanation or message to determine semantics. They
+must branch on reason_code, enum values, HTTP status, CLI exit code, and
+model fields.
+
+ResolverError carries:
+
+- reason_code;
+- explanation;
+- string form "REASON_CODE: explanation" for backward compatibility.
+
+The pinned public reason codes are:
+
+- CALENDAR_MARKET_MISMATCH
+- CALENDAR_TIMEZONE_MISMATCH
+- CANONICAL_UNSUPPORTED
+- CLI_ARGUMENT_ERROR
+- DUPLICATE_PROVIDER_NAME
+- EXECUTION_FACTS_UNAVAILABLE
+- INVALID_PROVIDER
+- INVALID_REQUEST
+- INVALID_SNAPSHOT
+- NOT_IMPLEMENTED
+- PRICE_BASIS_UNRESOLVED
+- PROVIDER_REPORT_FAILED
+- UNKNOWN_MARKET
+- VALIDATION_ERROR
+
+API resolver failures must return a structured payload with error,
+reason_code, explanation, and message. Malformed requests must be
+distinguishable from semantic resolver failures by error=VALIDATION_ERROR
+and reason_code=VALIDATION_ERROR.
+
+CLI runtime failures must write a structured JSON error payload to stderr
+for resolver, request validation, provider construction, snapshot validation,
+and serve dependency failures. CLI exit code 0 means success; exit code 2
+means request, validation, resolver, or local runtime failure. Argparse may
+raise SystemExit(2) for syntactically malformed invocations.
+
+Provider failures are data-bearing by default. ProviderReportError is
+translated by the resolver into SourceStatus.freshness=FAILED with
+reason_code=PROVIDER_REPORT_FAILED and explanation. A provider must never
+silently report FRESH when it cannot safely report facts.
+
+UNKNOWN enum states and FAILED provider states must carry reason_code and
+explanation wherever the model contract requires fail-closed metadata. Such
+states are deterministic snapshot content and therefore hash-affecting.
+
+Future reason code changes require product contract review. New reason codes
+may be additive under the same semantic contract only when they do not change
+the meaning of existing reason codes. Renames, removals, and semantic reuse
+of an existing reason code require a semantic_contract_version change.
+
+## 22. Canonical Authority Boundary
+
+Canonicality is an asserted institutional truth boundary. It is not a
+convenience label and must not mean latest, freshest, most recent, inferred,
+provider majority vote, or best effort.
+
+CANONICAL differs from other perspectives:
+
+- LIVE resolves current temporal meaning and may remain provisional.
+- EXECUTED resolves execution-context meaning and may remain non-canonical.
+- REPLAY reproduces a historical interpretation from frozen inputs.
+- HISTORICAL resolves a pinned historical context without implying system of
+  record authority.
+- CANONICAL asks the system of record whether an answer has been asserted as
+  canonical under its publication rules.
+
+The current resolver has no canonical authority. Therefore the correct v1
+behavior is CANONICAL_UNSUPPORTED fail-closed. The resolver must not infer
+canonical_state=CANONICAL from provider freshness, publication_state,
+execution_state, latest timestamp, majority agreement, price basis, market
+phase, or any other non-authority signal.
+
+A future canonical authority must be a typed boundary separate from ordinary
+SourceProvider facts. It must provide, at minimum:
+
+- authority_id;
+- authority_version;
+- authority protocol version;
+- publication schema version;
+- assertion instant;
+- publication instant;
+- canonical_state assertion;
+- publication_state assertion;
+- provenance for the asserted fact;
+- supersession identity when an assertion replaces a prior assertion;
+- withdrawal identity and reason when an assertion is retracted;
+- semantic contract version used by the authority.
+
+Providers may report facts used by the resolver, but providers must not
+self-assert canonicality unless they implement the typed canonical authority
+protocol. A provider returning FRESH, PUBLISHED, OFFICIAL_CLOSE, SETTLEMENT,
+or FILLED is not enough to establish canonical_state=CANONICAL.
+
+If a future authority is unavailable, incomplete, contradictory, unsupported,
+or version-incompatible, CANONICAL must fail closed with a typed reason code.
+It must not downgrade silently to LIVE, HISTORICAL, REPLAY, or PROVISIONAL.
+If an authority disagrees with ordinary providers, the resolver must surface
+the disagreement explicitly or fail closed; it must not hide the conflict by
+choosing the newest or freshest source.
+
+Canonical publication lifecycle:
+
+- NOT_PUBLISHED may become PRE_PUBLISHED, EMBARGOED, PUBLISHED, FAILED, or
+  UNKNOWN with reason metadata.
+- PRE_PUBLISHED may become PUBLISHED, EMBARGOED, WITHDRAWN, FAILED, or
+  UNKNOWN with reason metadata.
+- EMBARGOED may become PUBLISHED, WITHDRAWN, FAILED, or UNKNOWN with reason
+  metadata.
+- PUBLISHED may become WITHDRAWN or may be paired with
+  canonical_state=SUPERSEDED when replaced by a later canonical assertion.
+- WITHDRAWN is terminal for the withdrawn publication identity unless an
+  explicit new publication identity is asserted.
+- FAILED is terminal for that publication attempt unless a new attempt
+  identity is asserted.
+- SUPERSEDED is terminal for that canonical assertion identity. It must not be
+  treated as current canonical truth.
+
+Supersession and withdrawal require explicit provenance. A superseded
+assertion must identify the replacing assertion. A withdrawn assertion must
+identify the withdrawal event, withdrawal instant, and authority responsible
+for withdrawal.
+
+Replay-safe canonical semantics:
+
+- Historical replay must preserve the canonical assertion exactly as asserted
+  at the time, including CANONICAL, SUPERSEDED, WITHDRAWN, NOT_CANONICAL,
+  NOT_AVAILABLE, and UNKNOWN states.
+- Replay must never silently upgrade provisional history into canonical
+  history.
+- Replay under newer authority, publication, calendar, provider, timezone, or
+  semantic regimes is reinterpretation and must be explicitly declared.
+- Superseded and withdrawn assertions must remain visible to reproduction
+  replay as the historical assertion states they were, not as current truth.
+
+Future persisted snapshots or replay envelopes involving CANONICAL must make
+authority metadata hash-affecting. At minimum, authority_id,
+authority_version, authority protocol version, publication schema version,
+assertion instant, publication instant, supersession or withdrawal identity,
+and semantic contract version must be frozen for reproduction replay.
+
+Future integration prohibitions:
+
+- Do not infer canonicality from freshness.
+- Do not infer canonicality from publication_state alone.
+- Do not infer canonicality from execution_state.
+- Do not infer canonicality from latest timestamp.
+- Do not infer canonicality from provider majority vote.
+- Do not silently reinterpret withdrawn or superseded assertions.
+- Do not let mutable current authority state rewrite historical snapshots.
+- Do not let Replay, Run Diff, Audit, or read paths call providers or runtime
+  authority to recompute historical canonical meaning.
+
+Canonical semantics require separate governance for:
+
+- asof123 semantic_contract_version;
+- canonical authority protocol version;
+- publication schema version;
+- authority_version;
+- replay freeze metadata.
+
+Changing the meaning of canonical_state, publication_state, supersession,
+withdrawal, or authority interpretation requires contract review and may
+require a semantic_contract_version change.
+
+## 23. Market Calendar Semantics
+
+Market calendars are semantic interpretation boundaries, not convenience
+timestamp helpers. They define market-facing meaning such as business_date,
+market_phase, session boundaries, holidays, and closure states for a named
+market plus explicit IANA timezone.
+
+The current XNYS calendar is a minimal reference calendar only. It guarantees:
+
+- market = XNYS;
+- market_timezone = America/New_York;
+- UTC input validation for calendar methods;
+- conversion through ZoneInfo for America/New_York;
+- local-date business_date semantics;
+- deterministic weekday handling;
+- deterministic regular-session phase boundaries;
+- deterministic 2025-2026 hard-coded holiday handling;
+- deterministic DST behavior according to the runtime timezone database.
+
+The current XNYS calendar does not guarantee:
+
+- full NYSE exchange-calendar authority;
+- production trading calendar completeness;
+- full holiday coverage outside the supported hard-coded years;
+- modeled early-close sessions;
+- modeled half days;
+- modeled emergency exchange closures;
+- modeled ad hoc market halts;
+- modeled unscheduled holidays;
+- modeled pre-market or after-hours trading sessions;
+- protection against future timezone database reinterpretation drift.
+
+Current XNYS regular-session phase semantics:
+
+- Saturday or Sunday in America/New_York returns WEEKEND.
+- Known hard-coded holidays return HOLIDAY.
+- Dates outside the supported holiday years return CLOSED.
+- Known unsupported early-close dates return CLOSED.
+- Regular supported non-holiday weekdays before 09:30 ET return PRE_OPEN.
+- Regular supported non-holiday weekdays from 09:30 ET until before 16:00 ET
+  return MARKET_OPEN.
+- Regular supported non-holiday weekdays at or after 16:00 ET return
+  POST_CLOSE.
+
+CLOSED is the fail-safe calendar phase when the reference calendar knows it
+cannot safely apply regular-session semantics. The resolver may raise a typed
+ResolverError for unknown markets or calendar identity mismatches; the
+calendar itself uses CLOSED for supported-market conditions that are known to
+be unsupported by the minimal reference calendar.
+
+Future market calendar implementations must preserve:
+
+- explicit market plus market_timezone identity;
+- no fallback market;
+- no fallback timezone;
+- no provider-driven market phase inference;
+- UTC-only machine instants;
+- explicit fail-closed behavior for unsupported sessions;
+- deterministic phase boundaries for the same UTC instant and same calendar
+  rule version.
+
+Future persisted replay must pin:
+
+- calendar_id;
+- calendar_version;
+- market;
+- market_timezone;
+- holiday table version;
+- exchange rule version;
+- market session version;
+- early-close version when early closes are modeled;
+- ad hoc closure version when ad hoc closures are modeled;
+- timezone rule identity or tzdata_version.
+
+Reproduction replay must preserve the original calendar interpretation.
+Reinterpretation under newer holidays, exchange sessions, market definitions,
+or timezone rules is allowed only when explicitly declared. Historical replay
+must never silently reinterpret market phases, business dates, or session
+boundaries.
+
+Future integrations must not:
+
+- silently update holiday tables in a way that rewrites historical meaning;
+- fall back from one market to another;
+- use timezone aliases to reinterpret market meaning;
+- apply current calendar rules to historical replay without declaring
+  reinterpretation;
+- infer market phase from provider data;
+- use mutable runtime calendars in Replay, Run Diff, Audit, or other read
+  paths;
+- treat the current XNYS reference calendar as production exchange authority.

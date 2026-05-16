@@ -107,7 +107,29 @@ def test_resolve_live_with_as_of_utc_returns_nonzero_validation_error(capsys):
     )
     assert exit_code == 2
     captured = capsys.readouterr()
-    assert "LIVE" in captured.err or "invalid request" in captured.err.lower()
+    body = json.loads(captured.err)
+    assert body["error"] == "VALIDATION_ERROR"
+    assert body["reason_code"] == "INVALID_REQUEST"
+    assert body["explanation"] == "Invalid resolve request"
+    assert "LIVE" in captured.err
+
+
+def test_resolve_canonical_fails_closed_without_authority(capsys):
+    exit_code = main(["resolve", "--perspective", "CANONICAL"])
+    assert exit_code == 2
+    captured = capsys.readouterr()
+    body = json.loads(captured.err)
+    assert body["error"] == "RESOLVER_ERROR"
+    assert body["reason_code"] == "CANONICAL_UNSUPPORTED"
+
+
+def test_resolve_unknown_market_fails_closed_with_reason_code(capsys):
+    exit_code = main(["resolve", "--market", "XNAS"])
+    assert exit_code == 2
+    captured = capsys.readouterr()
+    body = json.loads(captured.err)
+    assert body["error"] == "RESOLVER_ERROR"
+    assert body["reason_code"] == "UNKNOWN_MARKET"
 
 
 def test_snapshot_happy_path_returns_content_hash(capsys):

@@ -8,6 +8,7 @@ ExecutionState, CanonicalState, PriceBasis, and PublicationState.
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
+import math
 
 import pytest
 from pydantic import ValidationError
@@ -22,6 +23,9 @@ from asof123.enums import (
     SourceFreshness,
 )
 from asof123.models import (
+    SEMANTIC_CONTRACT_VERSION,
+    SNAPSHOT_HASH_ALGORITHM,
+    SNAPSHOT_SCHEMA_VERSION,
     AsOfSnapshot,
     MarketIdentity,
     SourceStatus,
@@ -138,6 +142,28 @@ def test_empty_source_key_rejected_in_context():
         )
 
 
+def test_source_status_metadata_is_frozen_after_validation():
+    status = SourceStatus(
+        freshness=SourceFreshness.FRESH,
+        metadata={"coverage": {"symbols": ["A", "B"]}},
+    )
+    assert status.metadata == {"coverage": {"symbols": ("A", "B")}}
+    with pytest.raises(TypeError):
+        status.metadata["new"] = "value"
+    with pytest.raises(TypeError):
+        status.metadata["coverage"]["symbols"] = ["C"]
+
+
+def test_source_status_metadata_rejects_non_json_values():
+    with pytest.raises(ValidationError):
+        SourceStatus(freshness=SourceFreshness.FRESH, metadata={"bad": {"A", "B"}})
+
+
+def test_source_status_metadata_rejects_non_finite_float():
+    with pytest.raises(ValidationError):
+        SourceStatus(freshness=SourceFreshness.FRESH, metadata={"bad": math.nan})
+
+
 def test_canonical_perspective_requires_canonical_state_canonical():
     with pytest.raises(ValidationError):
         _valid_context(
@@ -211,6 +237,9 @@ def test_as_of_snapshot_valid():
         content_hash="abc123",
     )
     assert snap.snapshot_id == "snap-1"
+    assert snap.snapshot_schema_version == SNAPSHOT_SCHEMA_VERSION
+    assert snap.semantic_contract_version == SEMANTIC_CONTRACT_VERSION
+    assert snap.hash_algorithm == SNAPSHOT_HASH_ALGORITHM
     assert snap.captured_at_utc == UTC_NOW
     assert snap.context.market == "XNYS"
 
@@ -246,4 +275,34 @@ def test_as_of_snapshot_rejects_empty_content_hash():
             captured_at_utc=UTC_NOW,
             context=_valid_context(),
             content_hash="",
+        )
+
+
+def test_as_of_snapshot_rejects_unknown_schema_version():
+    with pytest.raises(ValidationError):
+        AsOfSnapshot(
+            snapshot_id="snap-5",
+            snapshot_schema_version="asof123.snapshot.v999",
+            captured_at_utc=UTC_NOW,
+            context=_valid_context(),
+        )
+
+
+def test_as_of_snapshot_rejects_unknown_semantic_contract_version():
+    with pytest.raises(ValidationError):
+        AsOfSnapshot(
+            snapshot_id="snap-6",
+            semantic_contract_version="asof123.contract.v999",
+            captured_at_utc=UTC_NOW,
+            context=_valid_context(),
+        )
+
+
+def test_as_of_snapshot_rejects_unknown_hash_algorithm():
+    with pytest.raises(ValidationError):
+        AsOfSnapshot(
+            snapshot_id="snap-7",
+            hash_algorithm="md5",
+            captured_at_utc=UTC_NOW,
+            context=_valid_context(),
         )

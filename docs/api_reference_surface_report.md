@@ -43,14 +43,14 @@ fully in-process.
 
 Routes:
 
-- `GET /asof/current` — Query parameters: `perspective` (defaults to
+- `GET /asof/current` - Query parameters: `perspective` (defaults to
   `LIVE`), `market` (defaults to `XNYS`), `market_timezone` (defaults to
   `America/New_York`). Builds a `ResolveRequest` with no `as_of_utc`
   and no `knowledge_cutoff_utc`, calls `resolve`, returns the
   `TemporalContext`.
-- `POST /asof/resolve` — Body: `ResolveRequest`. Calls `resolve`,
+- `POST /asof/resolve` - Body: `ResolveRequest`. Calls `resolve`,
   returns the `TemporalContext`.
-- `GET /sources/status` — Iterates `app.state.providers`, calls
+- `GET /sources/status` - Iterates `app.state.providers`, calls
   `provider.report(datetime.now(timezone.utc))` on each. Translates
   `ProviderReportError` into a `SourceStatus` with
   `freshness=FAILED`, `reason_code="PROVIDER_REPORT_FAILED"`, and the
@@ -58,7 +58,7 @@ Routes:
   provider name. Duplicate provider names short-circuit before any
   provider is called and return HTTP 409 Conflict with body
   `{"error": "DUPLICATE_PROVIDER_NAME", "message": "..."}`.
-- `POST /sources/report` — Body: `SourceReportRequest`
+- `POST /sources/report` - Body: `SourceReportRequest`
   (`{"name": ..., "status": SourceStatus}`). Always returns HTTP 501
   Not Implemented with body
   `{"error": "NOT_IMPLEMENTED", "message": "The reference app is
@@ -66,7 +66,7 @@ Routes:
   outside this pass."}`. The route still accepts and validates the
   request body so the OpenAPI shape matches PRODUCT_CONTRACT.md section
   14; only the runtime implementation is deferred.
-- `POST /asof/snapshot` — Body: `SnapshotRequest`
+- `POST /asof/snapshot` - Body: `SnapshotRequest`
   (`{"snapshot_id": str, "context": TemporalContext}`). Calls
   `make_snapshot(context, snapshot_id)` and returns the
   `AsOfSnapshot`. The `snapshot_id` is validated to be non-empty at
@@ -125,15 +125,13 @@ without changing the URL surface.
 
 - `ResolverError` (raised by `resolve`) is caught by an exception
   handler registered on the app. The response is HTTP 400 Bad Request
-  with body `{"error": "RESOLVER_ERROR", "message": "..."}`, where
-  `message` is `str(exc)`. This is the only path that converts a
-  Python exception into a non-standard error body; everything else
-  follows FastAPI's defaults.
+  with a structured body containing `error=RESOLVER_ERROR`,
+  `reason_code`, `explanation`, and `message`. `reason_code` is the
+  machine-readable identity; `message` is compatibility text.
 - Pydantic validation errors on request bodies (invalid
   `ResolveRequest`, invalid `SnapshotRequest`, etc.) surface as HTTP
-  422 with FastAPI's default error envelope (`{"detail": [...]}`).
-  This is the framework default and is sufficient for the reference
-  app.
+  422 with `error=VALIDATION_ERROR` and
+  `reason_code=VALIDATION_ERROR`.
 - Provider failures in `GET /sources/status` are never converted to
   HTTP 500. A `ProviderReportError` becomes a `SourceStatus` with
   `freshness=FAILED`; the HTTP response itself is still 200 and the
@@ -141,8 +139,7 @@ without changing the URL surface.
   the resolver's fail-closed contract: providers report facts, even
   the fact of their own failure.
 - Duplicate provider names in `GET /sources/status` return HTTP 409
-  Conflict with body
-  `{"error": "DUPLICATE_PROVIDER_NAME", "message": "..."}`. 409 was
+  Conflict with `reason_code=DUPLICATE_PROVIDER_NAME`. 409 was
   chosen over 500 because the duplication is a registration mistake
   caught at request time, not an internal server fault. The message
   names the offending provider so a caller can fix it.
@@ -217,9 +214,9 @@ Total project test count: 127 passed (115 prior + 12 new).
 - `POST /sources/report` returns HTTP 501 deliberately. The brief
   allowed picking a status; 501 was chosen over 405 because the
   endpoint is named in the contract (PRODUCT_CONTRACT.md section 14)
-  but is intentionally not implemented in this pass. 405 would
+  but intentionally remains read-only in this pass. 405 would
   suggest "wrong method"; 501 says "this method on this path is
-  defined but not yet implemented", which matches reality.
+  defined but unavailable in this reference app", which matches reality.
 - `GET /sources/status` duplicate-name response is HTTP 409 Conflict
   rather than 500. The brief permitted either; 409 reflects that the
   state (`app.state.providers`) was constructed with conflicting

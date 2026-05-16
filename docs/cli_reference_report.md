@@ -153,7 +153,8 @@ Three layers:
 - Library-level errors (`pydantic.ValidationError` from
   `ResolveRequest` or `AsOfSnapshot`, `asof123.ResolverError` from
   the resolver) are caught inside each subcommand handler. The
-  handler writes a one-line error message to stderr and returns 2.
+  handler writes structured JSON with `error`, `reason_code`, and
+  `explanation` to stderr and returns 2.
   `main(...)` returns 2 in this case (no exception leaks out).
 - Provider-level failures (a `FileProvider` whose file cannot be
   read) are not caught at the CLI layer. The resolver translates
@@ -163,9 +164,10 @@ Three layers:
   `test_source_file_missing_file_yields_failed_source_status`
   proves this.
 
-`asof123 serve` reports a missing `uvicorn` via stderr + exit code 2,
-not via a Python traceback. Other startup failures (port already in
-use, etc.) are left to uvicorn and propagate as uvicorn does.
+`asof123 serve` reports a missing `uvicorn` via structured stderr JSON
+plus exit code 2, not via a Python traceback. Other startup failures
+(port already in use, etc.) are left to uvicorn and propagate as uvicorn
+does.
 
 ## Tests Added
 
@@ -187,7 +189,7 @@ use, etc.) are left to uvicorn and propagate as uvicorn does.
   and stderr mentions `UTC`.
 - `resolve --perspective LIVE --as-of-utc ...` returns exit code 2
   (LIVE forbids `as_of_utc` per `ResolveRequest`'s validator) and
-  writes the validation error to stderr.
+  writes structured JSON with `reason_code=INVALID_REQUEST` to stderr.
 - `snapshot --snapshot-id demo-1 ...` returns exit code 0 with a 64-
   character hex `content_hash` and a non-empty `snapshot_id`.
 - `snapshot` without `--snapshot-id` raises `SystemExit(2)` via
@@ -198,7 +200,7 @@ use, etc.) are left to uvicorn and propagate as uvicorn does.
   with the source listed as `freshness=FAILED`,
   `reason_code=PROVIDER_REPORT_FAILED`.
 - `serve` with `sys.modules["uvicorn"]` monkeypatched to `None`
-  returns exit code 2 and stderr mentions `uvicorn`.
+  returns exit code 2 with structured stderr JSON mentioning `uvicorn`.
 - `serve --host 0.0.0.0 --port 9000` with `sys.modules["uvicorn"]`
   monkeypatched to a `SimpleNamespace(run=...)` stub returns exit
   code 0 and the stub records the host and port that were passed.
@@ -242,10 +244,9 @@ Total project test count: 142 passed (127 prior + 15 new).
   provider errors (empty name, etc.) still fail nonzero because
   they indicate a bug in the invocation.
 - Library validation errors (`pydantic.ValidationError`,
-  `ResolverError`) print `str(exc.errors())` to stderr for Pydantic
-  and `str(exc)` for the resolver. The output is intentionally not
-  pretty-printed; a future pass that wants a polished error format
-  can wrap these.
+  `ResolverError`) print structured JSON to stderr. Argparse
+  pre-dispatch errors remain conventional argparse stderr plus
+  `SystemExit(2)`.
 - `serve` imports uvicorn lazily inside the subcommand handler, not
   at module import time. This keeps `asof123.cli` importable in
   environments where uvicorn is not installed (for example a CI

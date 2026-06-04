@@ -1,155 +1,165 @@
 # asof123 Quickstart
 
-Get from `git clone` to a resolved `TemporalContext` in under a minute.
+Get from `git clone` to a resolved `TemporalContext` quickly.
 
-## The mental model
+## Mental Model
 
 External systems report facts.
 asof123 resolves temporal meaning.
 
-Every example below uses a `FileProvider` as the simplest hook for an
-external fact. There is no persistence, no auth, no scheduler, and no
-background worker in this repo; the only IO is the JSON file the
-`FileProvider` reads.
+There is no persistence, auth, scheduler, workflow engine, OMS/EMS/PMS, broker
+adapter, data warehouse, or mutable source registry in this repo.
 
 ## Install
 
 Editable install with dev extras:
 
-    pip install -e ".[dev]"
-
-This pulls in Pydantic plus the test and API extras (`fastapi`,
-`httpx`, `pytest`, `uvicorn`). For library-only use, `pip install -e .`
-is enough; for HTTP serving without the test stack, use
-`pip install -e ".[serve]"`.
-
-## Run the tests
-
-    python -m pytest -q
-
-You should see every test pass.
-
-## Use the CLI
-
-Resolve a LIVE `TemporalContext` for US equities:
-
-    asof123 resolve --perspective LIVE
-
-Resolve and include a source feed via a local JSON file:
-
-    asof123 resolve \
-        --perspective LIVE \
-        --source-file quotes_feed=examples/source_status_quotes.json
-
-For research/replay checks, require a source and apply a max-age threshold:
-
-    asof123 resolve \
-        --perspective REPLAY \
-        --as-of-utc 2026-02-10T21:00:00Z \
-        --knowledge-cutoff-utc 2026-02-10T21:00:00Z \
-        --source-file quotes_feed=examples/source_status_quotes.json \
-        --required-source quotes_feed \
-        --max-age-seconds 300
-
-For execution-style checks, require sources such as `quotes_feed`, `locates`,
-or `basket_file` and apply per-source max-age thresholds:
-
-    asof123 resolve \
-        --perspective PRE_TRADE_INTENT \
-        --as-of-utc 2026-05-12T14:00:00Z \
-        --knowledge-cutoff-utc 2026-05-12T14:00:00Z \
-        --source-file quotes_feed=examples/source_status_quotes.json \
-        --required-source quotes_feed \
-        --required-source locates \
-        --max-age-source quotes_feed=5
-
-That answers whether supplied facts are present, fresh, stale, missing,
-failed, or after a replay cutoff. It does not send orders, fetch locates,
-generate files, upload files, route orders, or operate an OMS/EMS.
-
-Resolve a narrow CANONICAL read from one supplied publication assertion:
-
 ```bash
-cat > /tmp/asof123_official_close.json <<'JSON'
-{
-  "provider": "official_close",
-  "freshness": "FRESH",
-  "metadata": {
-    "publication": {
-      "publication_state": "PUBLISHED",
-      "canonical_state": "CANONICAL",
-      "publication_utc": "2026-05-12T21:05:00Z",
-      "asserted_at_utc": "2026-05-12T21:06:00Z"
-    }
-  }
-}
-JSON
-
-asof123 resolve \
-    --perspective CANONICAL \
-    --knowledge-cutoff-utc 2026-05-12T21:06:00Z \
-    --source-file official_close=/tmp/asof123_official_close.json
+pip install -e ".[dev]"
 ```
 
-That example reads a local `SourceStatus` file. It does not report into a
-registry, persist publication facts, poll for official close, or publish a
-report. If the publication assertion is missing, malformed, ambiguous, not
-published, not canonical, after cutoff, withdrawn, or superseded, CANONICAL
-resolution fails closed.
+For library-only use:
 
-Create a replay-safe snapshot of the resolved context:
+```bash
+pip install -e .
+```
 
-    asof123 snapshot \
-        --snapshot-id demo \
-        --perspective LIVE \
-        --source-file quotes_feed=examples/source_status_quotes.json
+For HTTP serving without the test stack:
 
-Datetime arguments are strict: `--as-of-utc` and
-`--knowledge-cutoff-utc` must be ISO 8601 with a UTC offset (`Z` or
-`+00:00`). Naive datetimes and non-UTC offsets are rejected at
-argparse time.
+```bash
+pip install -e ".[serve]"
+```
 
-## Run the example scripts
+## Run Tests
 
-The examples take no arguments and print JSON to stdout:
+```bash
+python -m pytest -q
+```
 
-    python examples/resolve_demo.py
-    python examples/snapshot_demo.py
+## Resolve A Context
 
-`examples/resolve_demo.py` resolves a LIVE `TemporalContext` with a
-single `FileProvider` pointed at `examples/source_status_quotes.json`.
-`examples/snapshot_demo.py` does the same and wraps the result in an
-`AsOfSnapshot` with `snapshot_id="demo_snapshot"`. Both scripts are
-intentionally short; they are the smallest possible end-to-end use of
-the library.
+Python:
 
-## Optional: serve the FastAPI reference app
+```python
+from datetime import datetime, timezone
 
-The HTTP surface is an optional extra. To run it:
+from asof123 import ResolveRequest, XNYSCalendar, resolve
 
-    pip install -e ".[serve]"
-    asof123 serve --host 127.0.0.1 --port 8000
+ctx = resolve(
+    ResolveRequest(
+        perspective="PRE_TRADE_INTENT",
+        market="XNYS",
+        market_timezone="America/New_York",
+        as_of_utc=datetime(2026, 5, 12, 14, 0, 0, tzinfo=timezone.utc),
+    ),
+    calendars={"XNYS": XNYSCalendar()},
+)
 
-That exposes the endpoints from `PRODUCT_CONTRACT.md` section 14:
+print(ctx.business_date)
+print(ctx.market_phase)
+print(ctx.price_basis)
+```
 
-- `GET  /asof/current`
+CLI:
+
+```bash
+asof123 resolve \
+  --perspective PRE_TRADE_INTENT \
+  --market XNYS \
+  --market-timezone America/New_York \
+  --as-of-utc 2026-05-12T14:00:00Z
+```
+
+## Add SourcePolicy
+
+Use policy flags when shell, batch, or CI jobs need required-source and
+freshness checks:
+
+```bash
+asof123 resolve \
+  --perspective REPLAY \
+  --market XNYS \
+  --market-timezone America/New_York \
+  --as-of-utc 2026-02-10T21:00:00Z \
+  --knowledge-cutoff-utc 2026-02-10T21:00:00Z \
+  --source-file quotes_feed=examples/source_status_quotes.json \
+  --required-source quotes_feed \
+  --max-age-seconds 300
+```
+
+Policy can also be supplied through the reference API wrapper:
+
+```json
+{
+  "request": {
+    "perspective": "PRE_TRADE_INTENT",
+    "market": "XNYS",
+    "market_timezone": "America/New_York",
+    "as_of_utc": "2026-05-12T14:00:00Z"
+  },
+  "policy": {
+    "required_sources": ["quotes"],
+    "max_age_seconds": 300
+  }
+}
+```
+
+## Snapshot A Context
+
+```bash
+asof123 snapshot \
+  --snapshot-id demo \
+  --perspective PRE_TRADE_INTENT \
+  --market XNYS \
+  --market-timezone America/New_York \
+  --as-of-utc 2026-05-12T14:00:00Z
+```
+
+Snapshots are deterministic audit artifacts. They are not a persisted replay
+engine.
+
+## Serve The Reference API
+
+```bash
+pip install -e ".[serve]"
+asof123 serve --host 127.0.0.1 --port 8000
+```
+
+Current endpoints:
+
+- `GET /asof/current`
 - `POST /asof/resolve`
-- `GET  /sources/status`
-- `POST /sources/report` (returns 501; the reference app is read-only)
+- `GET /sources/status`
+- `POST /sources/report` returns 501 because the reference app is read-only.
 - `POST /asof/snapshot`
 
-The serve mode loads no environment variables, opens no databases, and
-holds no mutable state beyond the calendars and providers handed to
-`create_app(...)` at construction time.
+The app loads no environment variables, opens no databases, and holds no
+mutable state beyond the calendars and providers handed to `create_app(...)`
+at construction time.
 
-## Where to go next
+## Example Scripts
 
-- `PRODUCT_CONTRACT.md` is the canonical contract. The locked
-  enumerations and the fail-closed rules live there.
-- `README.md` explains the problem space and lists the concrete bugs
-  this layer exists to prevent.
-- `docs/` contains a chronological set of design reports, one per
-  build pass. Read them in order if you want to see how the codebase
-  was put together.
-- `examples/` contains the small fixtures and scripts referenced
-  above.
+The smallest end-to-end scripts are:
+
+```bash
+python examples/resolve_demo.py
+python examples/snapshot_demo.py
+```
+
+## Recipes
+
+For practical copy-paste examples, use `docs/recipes/README.md`.
+
+Recipes cover:
+
+- business date;
+- market phase;
+- stale quotes;
+- replay safety;
+- canonical close;
+- pre-trade checks;
+- snapshot audit.
+
+## Contract
+
+`PRODUCT_CONTRACT.md` is canonical. README and recipes are subordinate to it.

@@ -28,6 +28,8 @@ env/
 
 # Generated / working documentation
 /docs/*.md
+!/docs/quickstart.md
+!/docs/product_contract_report.md
 !/docs/runbooks.md
 !/docs/runbooks/
 !/docs/runbooks/**

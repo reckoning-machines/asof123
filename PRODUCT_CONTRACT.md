@@ -128,6 +128,12 @@ names exactly.
   A named external system that reports facts to asof123 (for example a
   price feed, an OMS connector, an internal warehouse).
 
+- SourcePolicy
+  Optional caller-supplied policy for required sources, source max-age
+  checks, and replay or historical knowledge-cutoff admissibility. It does
+  not discover providers, persist source state, manage SLAs, retry
+  providers, or implement a mutable registry.
+
 - AsOfSnapshot
   An immutable, serializable record of a resolved TemporalContext, intended
   for replay, audit, and reproducibility. Carries explicit snapshot schema
@@ -330,9 +336,16 @@ wall-clock fallback.
 
 Concretely:
 
-- If a required SourceProvider has not reported and no fallback is
-  configured, the resolved SourceStatus must be MISSING or FAILED, not
-  FRESH.
+- If a SourcePolicy declares a required source and that source has not
+  reported, the resolved SourceStatus must be MISSING with
+  reason_code=REQUIRED_SOURCE_MISSING, not FRESH.
+- If SourcePolicy max-age checks determine that a source is too old, the
+  resolved SourceStatus must be STALE with reason_code=SOURCE_STALE unless
+  the provider has already reported a stronger fail-closed state such as
+  FAILED, MISSING, STALE, or NOT_PUBLISHED.
+- If a REPLAY or HISTORICAL source reports last_update_utc after
+  knowledge_cutoff_utc, SourcePolicy must mark it NOT_PUBLISHED with
+  reason_code=SOURCE_NOT_ADMISSIBLE. Equality at the cutoff is admissible.
 - If a MarketCalendar is unknown, the resolver must fail closed with an
   explicit reason, not MARKET_OPEN. The core Python resolver may raise a
   typed ResolverError for this condition. API and CLI surfaces must translate
@@ -352,17 +365,22 @@ auth boundary. It exists to demonstrate the contract over HTTP.
 
 - GET /asof/current
   Resolve the current TemporalContext for a given perspective, market, and
-  caller identity. The reference app may document convenience defaults for
+  market timezone. The reference app may document convenience defaults for
   interactive use, but those defaults are not core resolver defaults.
 
 - POST /asof/resolve
-  Resolve a TemporalContext for an explicit request body. Supports
-  overrides for perspective, market, business date, and knowledge cutoff.
-  Used by preview, replay, and historical callers.
+  Resolve a TemporalContext for an explicit request body. The reference app
+  supports both a bare ResolveRequest and an optional wrapper with:
+  - request: ResolveRequest
+  - policy: SourcePolicy or null
+  The wrapper is the API surface for required-source, max-age, and
+  replay/historical cutoff policy. When policy is omitted, resolver behavior
+  must match the bare ResolveRequest path.
 
 - POST /sources/report
-  A SourceProvider reports its current state (last update instant,
-  publication state, partial or complete, failure reason).
+  Reserved contract shape for future source reporting. The current reference
+  app is read-only and must return NOT_IMPLEMENTED / HTTP 501 for this
+  endpoint because it has no mutable registry or persistence layer.
 
 - GET /sources/status
   Read the current resolved state of one or more SourceProviders.
@@ -387,6 +405,9 @@ reference surfaces, provided they continue to obey this contract:
 - SourceProvider protocol.
 - Static SourceProvider.
 - File SourceProvider.
+- SourcePolicy.
+- Pure source-policy evaluator.
+- Pure publication-readiness evaluator.
 - Snapshot helper.
 - XNYS reference calendar.
 - FastAPI reference app.
@@ -411,10 +432,9 @@ The open-source core of asof123 may ship with:
   demos).
 - File-based SourceProvider implementations (read freshness from a local
   file or directory).
-- Simple Postgres freshness providers (read last-update timestamps from a
-  named table or query).
 - A FastAPI reference application exposing the endpoints in section 14.
-- A CLI reference command for resolving a TemporalContext from a shell.
+- CLI reference commands for resolving a TemporalContext and materializing an
+  AsOfSnapshot from a shell.
 
 The following are explicitly out of scope for the open-source core. They
 may exist as private adapters, commercial integrations, or downstream
@@ -639,6 +659,7 @@ The pinned public reason codes are:
 
 - CALENDAR_MARKET_MISMATCH
 - CALENDAR_TIMEZONE_MISMATCH
+- CANONICAL_NOT_CANONICAL
 - CANONICAL_UNSUPPORTED
 - CLI_ARGUMENT_ERROR
 - DUPLICATE_PROVIDER_NAME
@@ -648,7 +669,18 @@ The pinned public reason codes are:
 - INVALID_SNAPSHOT
 - NOT_IMPLEMENTED
 - PRICE_BASIS_UNRESOLVED
+- PUBLICATION_AFTER_CUTOFF
+- PUBLICATION_ASSERTION_AFTER_CUTOFF
+- PUBLICATION_ASSERTION_AMBIGUOUS
+- PUBLICATION_METADATA_INCOMPLETE
+- PUBLICATION_METADATA_INVALID
+- PUBLICATION_METADATA_MISSING
+- PUBLICATION_METADATA_UNSUPPORTED
+- PUBLICATION_NOT_PUBLISHED
 - PROVIDER_REPORT_FAILED
+- REQUIRED_SOURCE_MISSING
+- SOURCE_NOT_ADMISSIBLE
+- SOURCE_STALE
 - UNKNOWN_MARKET
 - VALIDATION_ERROR
 
@@ -693,14 +725,34 @@ CANONICAL differs from other perspectives:
 - CANONICAL asks the system of record whether an answer has been asserted as
   canonical under its publication rules.
 
-The current resolver has no canonical authority. Therefore the correct v1
-behavior is CANONICAL_UNSUPPORTED fail-closed. The resolver must not infer
-canonical_state=CANONICAL from provider freshness, publication_state,
-execution_state, latest timestamp, majority agreement, price basis, market
-phase, or any other non-authority signal.
+The current resolver implements a narrow canonical publication-readiness
+gate. This is not a full canonical authority. A CANONICAL request may return
+a TemporalContext with canonical_state=CANONICAL only when exactly one
+caller-supplied SourceStatus.metadata["publication"] assertion validates and
+proves all of the following:
 
-A future canonical authority must be a typed boundary separate from ordinary
-SourceProvider facts. It must provide, at minimum:
+- publication_state=PUBLISHED;
+- canonical_state=CANONICAL;
+- publication_utc is present and UTC-valid;
+- asserted_at_utc is present and UTC-valid;
+- for CANONICAL, REPLAY, and HISTORICAL cutoff checks, neither
+  publication_utc nor asserted_at_utc is after knowledge_cutoff_utc;
+- unsupported lifecycle metadata is absent.
+
+All other CANONICAL cases must fail closed with a typed reason code. Missing,
+malformed, incomplete, unsupported, ambiguous, not-published, not-canonical,
+or after-cutoff publication metadata must not produce a canonical context.
+
+The resolver must not infer canonical_state=CANONICAL from provider
+freshness, latest timestamp, execution_state, majority agreement, price
+basis, market phase, or any other non-publication-readiness signal. It must
+also not infer canonical_state=CANONICAL from publication_state alone;
+canonical_state=CANONICAL is required.
+
+The current narrow gate deliberately uses SourceStatus metadata rather than a
+new public ontology noun. A future full canonical authority may require a
+typed boundary separate from ordinary SourceProvider facts. Such a boundary
+would provide, at minimum:
 
 - authority_id;
 - authority_version;
@@ -715,17 +767,19 @@ SourceProvider facts. It must provide, at minimum:
 - withdrawal identity and reason when an assertion is retracted;
 - semantic contract version used by the authority.
 
-Providers may report facts used by the resolver, but providers must not
-self-assert canonicality unless they implement the typed canonical authority
-protocol. A provider returning FRESH, PUBLISHED, OFFICIAL_CLOSE, SETTLEMENT,
-or FILLED is not enough to establish canonical_state=CANONICAL.
+Providers may report facts used by the resolver. A provider returning FRESH,
+PUBLISHED, OFFICIAL_CLOSE, SETTLEMENT, or FILLED is not enough to establish
+canonical_state=CANONICAL. Under the current narrow gate, the only accepted
+canonical-readiness path is one validated publication metadata assertion with
+publication_state=PUBLISHED and canonical_state=CANONICAL.
 
-If a future authority is unavailable, incomplete, contradictory, unsupported,
-or version-incompatible, CANONICAL must fail closed with a typed reason code.
-It must not downgrade silently to LIVE, HISTORICAL, REPLAY, or PROVISIONAL.
-If an authority disagrees with ordinary providers, the resolver must surface
-the disagreement explicitly or fail closed; it must not hide the conflict by
-choosing the newest or freshest source.
+If a future authority or current publication assertion is unavailable,
+incomplete, contradictory, unsupported, ambiguous, or version-incompatible,
+CANONICAL must fail closed with a typed reason code. It must not downgrade
+silently to LIVE, HISTORICAL, REPLAY, or PROVISIONAL. If authority facts or
+publication assertions disagree with ordinary providers, the resolver must
+surface the disagreement explicitly or fail closed; it must not hide the
+conflict by choosing the newest or freshest source.
 
 Canonical publication lifecycle:
 
@@ -747,7 +801,9 @@ Canonical publication lifecycle:
 Supersession and withdrawal require explicit provenance. A superseded
 assertion must identify the replacing assertion. A withdrawn assertion must
 identify the withdrawal event, withdrawal instant, and authority responsible
-for withdrawal.
+for withdrawal. The current narrow publication-readiness gate does not
+implement withdrawal or supersession semantics; supplied withdrawal or
+supersession metadata must fail closed as unsupported.
 
 Replay-safe canonical semantics:
 
@@ -774,6 +830,7 @@ Future integration prohibitions:
 - Do not infer canonicality from execution_state.
 - Do not infer canonicality from latest timestamp.
 - Do not infer canonicality from provider majority vote.
+- Do not choose among multiple publication assertions.
 - Do not silently reinterpret withdrawn or superseded assertions.
 - Do not let mutable current authority state rewrite historical snapshots.
 - Do not let Replay, Run Diff, Audit, or read paths call providers or runtime

@@ -11,7 +11,7 @@ UTC remains the storage and transport boundary; `market_datetime` and
 your warehouse, operate an OMS/EMS/PMS, route orders, or talk to brokers. It
 resolves temporal meaning from facts your systems already report.
 
-## Recipes
+## Core Authority Recipes
 
 - [Business Date](business_date.md): stop guessing whether "today" is the
   calendar date or market business date.
@@ -27,6 +27,9 @@ resolves temporal meaning from facts your systems already report.
   for quote, locate, and basket-file readiness.
 - [Snapshot Audit](snapshot_audit.md): create deterministic audit identity for a
   resolved AsOf.
+
+## Display And Integration Recipes
+
 - [UTC Everywhere, ET Nowhere](utc_everywhere_et_nowhere.md): keep machine
   instants in UTC and use IANA market timezones instead of `EST`.
 - [Browser-safe Market Time Display](browser_safe_market_time_display.md):

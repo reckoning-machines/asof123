@@ -50,9 +50,6 @@ disagree, the contract wins.
 
 - Resolve market business date and market phase for a request.
 - Reject naive and non-UTC datetimes at the boundary.
-- Convert UTC infrastructure timestamps into market-local time without
-  scattering timezone logic across Python, SQL, ETL jobs, dashboards, and
-  browser code.
 - Normalize provider failures into `SourceStatus(freshness=FAILED)`.
 - Require sources such as `quotes`, `locates`, `warehouse`, or
   `official_close`.
@@ -62,16 +59,20 @@ disagree, the contract wins.
 - Resolve a narrow `CANONICAL` read when one supplied publication assertion
   proves `publication_state=PUBLISHED` and `canonical_state=CANONICAL`.
 - Create deterministic snapshot hashes for audit identity.
+- Expose derived market-time projections (`market_datetime`, `market_date`) so
+  humans can read the resolved AsOf without every UI, report, ETL job, or
+  notebook reimplementing timezone conversion.
 - Use the same semantics from Python, CLI, or the reference FastAPI app.
 
 ## Minimal Python
 
-Infrastructure runs in UTC. Humans operate in market time.
+`resolve(...)` returns the as-of decision answer.
 
-`AsOf` exposes both:
+It resolves business date, market phase, price basis, source state,
+publication/canonical state, and audit timestamps.
 
-- `resolved_at_utc` for auditability;
-- `market_datetime` and `market_date` for human market-time interpretation.
+It also exposes `market_datetime` and `market_date` as derived convenience
+projections for humans reading the answer.
 
 ```python
 from datetime import datetime, timezone
@@ -88,19 +89,23 @@ asof = resolve(
     calendars={"XNYS": XNYSCalendar()},
 )
 
-print(asof.resolved_at_utc)
-print(asof.market_datetime)
-print(asof.market_date)
 print(asof.business_date)
 print(asof.market_phase)
 print(asof.price_basis)
+
+print(asof.resolved_at_utc)
+print(asof.market_datetime)
+print(asof.market_date)
 ```
 
-`market_datetime` is derived from `resolved_at_utc` and `market_timezone`. It is
-convenience output, not a second source of truth. Callers should branch on
-resolved business meaning such as `market_phase`, `business_date`,
-`price_basis`, `publication_state`, and `canonical_state`, not on browser-local
-clock math.
+`market_datetime` and `market_date` are derived from `resolved_at_utc` and
+`market_timezone`.
+
+They are convenience output, not a second source of truth.
+
+Callers should branch on `business_date`, `market_phase`, `price_basis`,
+`publication_state`, `canonical_state`, and `execution_state` rather than local
+clock calculations.
 
 ## SourcePolicy
 
@@ -146,7 +151,7 @@ API wrapper:
 
 Copy-paste examples live in `docs/recipes/README.md`.
 
-Start there for:
+Core authority recipes:
 
 - business date;
 - market phase;
@@ -154,7 +159,10 @@ Start there for:
 - replay safety;
 - canonical close;
 - pre-trade checks;
-- snapshot audit;
+- snapshot audit.
+
+Display and integration recipes:
+
 - UTC everywhere, ET nowhere;
 - browser-safe market time display.
 

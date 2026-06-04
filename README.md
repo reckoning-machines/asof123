@@ -23,8 +23,9 @@ if official_close_published and official_close_final:
     run_report()
 ```
 
-Those checks are small until they are everywhere. Then every codebase has its
-own version of "as of", "fresh", "closed", "canonical", and "safe to replay".
+Each check looks harmless until every system has its own answer. Then every
+codebase has its own version of "as of", "fresh", "closed", "canonical", and
+"safe to replay".
 
 asof123 gives those decisions one vocabulary:
 
@@ -37,6 +38,7 @@ asof123 gives those decisions one vocabulary:
 - `PriceBasis`
 - `PublicationState`
 - `CanonicalState`
+- `ExecutionState`
 - `AsOfSnapshot`
 
 An As-Of answer is represented by `AsOf`.

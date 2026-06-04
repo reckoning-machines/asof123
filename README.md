@@ -1,5 +1,9 @@
 # asof123
 
+asof123 does not tell you what time it is.
+
+It tells you what that time means.
+
 asof123 gives notebooks, ETL jobs, dashboards, and research pipelines one
 consistent answer to:
 

@@ -173,8 +173,7 @@ SourceStatus(
 ```
 
 asof123 evaluates freshness, replay admissibility, and source policy using that
-timestamp. This is intentionally embarrassingly simple: make timestamp authority
-visible before making it sophisticated.
+timestamp.
 
 ## Recipes
 

@@ -41,6 +41,62 @@ Resolve and include a source feed via a local JSON file:
         --perspective LIVE \
         --source-file quotes_feed=examples/source_status_quotes.json
 
+For research/replay checks, require a source and apply a max-age threshold:
+
+    asof123 resolve \
+        --perspective REPLAY \
+        --as-of-utc 2026-02-10T21:00:00Z \
+        --knowledge-cutoff-utc 2026-02-10T21:00:00Z \
+        --source-file quotes_feed=examples/source_status_quotes.json \
+        --required-source quotes_feed \
+        --max-age-seconds 300
+
+For execution-style checks, require sources such as `quotes_feed`, `locates`,
+or `basket_file` and apply per-source max-age thresholds:
+
+    asof123 resolve \
+        --perspective PRE_TRADE_INTENT \
+        --as-of-utc 2026-05-12T14:00:00Z \
+        --knowledge-cutoff-utc 2026-05-12T14:00:00Z \
+        --source-file quotes_feed=examples/source_status_quotes.json \
+        --required-source quotes_feed \
+        --required-source locates \
+        --max-age-source quotes_feed=5
+
+That answers whether supplied facts are present, fresh, stale, missing,
+failed, or after a replay cutoff. It does not send orders, fetch locates,
+generate files, upload files, route orders, or operate an OMS/EMS.
+
+Resolve a narrow CANONICAL read from one supplied publication assertion:
+
+```bash
+cat > /tmp/asof123_official_close.json <<'JSON'
+{
+  "provider": "official_close",
+  "freshness": "FRESH",
+  "metadata": {
+    "publication": {
+      "publication_state": "PUBLISHED",
+      "canonical_state": "CANONICAL",
+      "publication_utc": "2026-05-12T21:05:00Z",
+      "asserted_at_utc": "2026-05-12T21:06:00Z"
+    }
+  }
+}
+JSON
+
+asof123 resolve \
+    --perspective CANONICAL \
+    --knowledge-cutoff-utc 2026-05-12T21:06:00Z \
+    --source-file official_close=/tmp/asof123_official_close.json
+```
+
+That example reads a local `SourceStatus` file. It does not report into a
+registry, persist publication facts, poll for official close, or publish a
+report. If the publication assertion is missing, malformed, ambiguous, not
+published, not canonical, after cutoff, withdrawn, or superseded, CANONICAL
+resolution fails closed.
+
 Create a replay-safe snapshot of the resolved context:
 
     asof123 snapshot \

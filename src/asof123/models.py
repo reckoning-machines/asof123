@@ -129,6 +129,23 @@ class MarketIdentity(BaseModel):
 
 
 class SourceStatus(BaseModel):
+    """Reported state for one source.
+
+    Publication metadata convention, used before adding any publication
+    readiness evaluator:
+
+        SourceStatus.metadata["publication"]
+
+    Expected semantic keys are `publication_state`, `canonical_state`,
+    `publication_utc`, and `asserted_at_utc`. Future semantic keys may include
+    `assertion_id`, `authority_id`, `withdrawal_utc`, `withdrawal_id`,
+    `superseded_utc`, `superseded_by`, and `explanation`.
+
+    This model only stores deterministic JSON-compatible metadata. It does not
+    validate publication readiness, infer canonicality, or implement canonical
+    publication gating.
+    """
+
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     provider: Optional[str] = None

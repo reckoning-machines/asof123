@@ -5,10 +5,12 @@ and provider protocol boundary, a minimal `XNYS` reference calendar, a
 minimal in-process resolver, the first concrete provider implementations
 (`StaticProvider`, `FileProvider`), and a deterministic snapshot helper
 (`make_snapshot`, `canonicalize_context`,
-`canonicalize_snapshot_payload`). Optional reference surfaces include a
-FastAPI app and CLI. It still ships no persistence layer, no scheduler,
-no orchestration logic, no async behavior, and no network IO in the core
-resolver path.
+`canonicalize_snapshot_payload`). It also exposes an optional
+`SourcePolicy` for required-source, freshness-age, and knowledge-cutoff
+admissibility checks, plus `apply_source_policy` for pure policy evaluation.
+Optional reference surfaces include a FastAPI app and CLI. It still ships no
+persistence layer, no scheduler, no orchestration logic, no async behavior,
+and no network IO in the core resolver path.
 """
 
 from .calendar import MarketCalendar
@@ -43,6 +45,7 @@ from .providers import (
     SourceProvider,
     StaticProvider,
 )
+from .policy import SourcePolicy, apply_source_policy
 from .requests import ResolveRequest
 from .resolver import ResolverError, resolve
 from .snapshot import (
@@ -87,6 +90,8 @@ __all__ = [
     "TemporalContext",
     "AsOfSnapshot",
     "ResolveRequest",
+    "SourcePolicy",
+    "apply_source_policy",
     "SourceProvider",
     "ProviderReportError",
     "StaticProvider",

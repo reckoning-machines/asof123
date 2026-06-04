@@ -10,6 +10,8 @@ Composes a `ResolveRequest`, a `Mapping[str, MarketCalendar]`, and an
 - delegates `business_date` and `market_phase` to the calendar,
 - collects each provider's `SourceStatus`, translating
   `ProviderReportError` into a `FAILED` status,
+- optionally applies a `SourcePolicy` for required sources, source age,
+  and replay/historical knowledge-cutoff admissibility,
 - applies a small fixed set of defaults for `price_basis`,
   `publication_state`, `canonical_state`, and `execution_state` and
   attaches `reason_code` / `explanation` whenever the contract's
@@ -38,6 +40,8 @@ from .enums import (
 )
 from .errors import ErrorReasonCode
 from .models import SourceStatus, TemporalContext
+from .policy import SourcePolicy, apply_source_policy
+from .publication import evaluate_publication_readiness
 from .providers import ProviderReportError, SourceProvider
 from .requests import ResolveRequest
 
@@ -95,6 +99,7 @@ def resolve(
     request: ResolveRequest,
     calendars: Mapping[str, MarketCalendar],
     providers: Iterable[SourceProvider] = (),
+    policy: Optional[SourcePolicy] = None,
 ) -> TemporalContext:
     now_utc = (
         request.as_of_utc
@@ -149,6 +154,21 @@ def resolve(
             )
         sources[provider.name] = status
 
+    knowledge_cutoff_utc = (
+        request.knowledge_cutoff_utc
+        if request.knowledge_cutoff_utc is not None
+        else now_utc
+    )
+
+    if policy is not None:
+        sources = apply_source_policy(
+            perspective=request.perspective,
+            knowledge_cutoff_utc=knowledge_cutoff_utc,
+            now_utc=now_utc,
+            sources=sources,
+            policy=policy,
+        )
+
     price_basis, price_reason = _resolve_price_basis(
         request.perspective, market_phase
     )
@@ -156,15 +176,22 @@ def resolve(
         request.perspective
     )
     if request.perspective == Perspective.CANONICAL:
-        raise ResolverError(
-            ErrorReasonCode.CANONICAL_UNSUPPORTED,
-            "minimal resolver has no canonical authority SourceProvider "
-            "and cannot assert "
-            "canonical_state=CANONICAL; fail-closed per "
-            "PRODUCT_CONTRACT.md section 10",
+        readiness = evaluate_publication_readiness(
+            perspective=request.perspective,
+            knowledge_cutoff_utc=knowledge_cutoff_utc,
+            sources=sources,
         )
-    canonical_state = CanonicalState.PROVISIONAL
-    publication_state = PublicationState.PUBLISHED
+        if not readiness.ready:
+            raise ResolverError(
+                ErrorReasonCode(readiness.reason_code or ErrorReasonCode.CANONICAL_UNSUPPORTED),
+                readiness.explanation
+                or "Canonical publication readiness could not be established",
+            )
+        canonical_state = CanonicalState.CANONICAL
+        publication_state = PublicationState.PUBLISHED
+    else:
+        canonical_state = CanonicalState.PROVISIONAL
+        publication_state = PublicationState.PUBLISHED
 
     reasons = [r for r in (price_reason, execution_reason) if r is not None]
     if reasons:
@@ -173,12 +200,6 @@ def resolve(
     else:
         reason_code = None
         explanation = None
-
-    knowledge_cutoff_utc = (
-        request.knowledge_cutoff_utc
-        if request.knowledge_cutoff_utc is not None
-        else now_utc
-    )
 
     return TemporalContext(
         resolved_at_utc=now_utc,

@@ -35,6 +35,7 @@ from pydantic import ValidationError
 from .calendars import XNYSCalendar
 from .enums import Perspective
 from .errors import ErrorReasonCode, ErrorResponse
+from .policy import SourcePolicy
 from .providers import FileProvider
 from .requests import ResolveRequest
 from .resolver import ResolverError, resolve
@@ -75,6 +76,33 @@ def _parse_source_file(value: str) -> tuple[str, str]:
     return name, path
 
 
+def _parse_positive_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            f"value must be a positive integer, got {value!r}"
+        ) from exc
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError(
+            f"value must be a positive integer, got {value!r}"
+        )
+    return parsed
+
+
+def _parse_max_age_source(value: str) -> tuple[str, int]:
+    if "=" not in value:
+        raise argparse.ArgumentTypeError(
+            f"--max-age-source must be name=seconds, got {value!r}"
+        )
+    name, _, seconds = value.partition("=")
+    if not name or not seconds:
+        raise argparse.ArgumentTypeError(
+            f"--max-age-source must be name=seconds with non-empty parts, got {value!r}"
+        )
+    return name, _parse_positive_int(seconds)
+
+
 def _add_resolve_args(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--perspective",
@@ -99,6 +127,31 @@ def _add_resolve_args(p: argparse.ArgumentParser) -> None:
             "Each provider reads its SourceStatus from the named JSON file."
         ),
     )
+    p.add_argument(
+        "--required-source",
+        action="append",
+        default=None,
+        help=(
+            "Require a source by name. May be repeated. Missing required "
+            "sources become explicit MISSING SourceStatus entries."
+        ),
+    )
+    p.add_argument(
+        "--max-age-seconds",
+        type=_parse_positive_int,
+        default=None,
+        help="Default max age in seconds for sources with last_update_utc.",
+    )
+    p.add_argument(
+        "--max-age-source",
+        type=_parse_max_age_source,
+        action="append",
+        default=None,
+        help=(
+            "Per-source max age in the form name=seconds. May be repeated. "
+            "Overrides --max-age-seconds for that source."
+        ),
+    )
 
 
 def _build_request(args: argparse.Namespace) -> ResolveRequest:
@@ -115,6 +168,26 @@ def _build_providers(args: argparse.Namespace) -> list[FileProvider]:
     if not args.source_file:
         return []
     return [FileProvider(name, path) for name, path in args.source_file]
+
+
+def _build_policy(args: argparse.Namespace) -> SourcePolicy | None:
+    required_sources = frozenset(args.required_source or [])
+    max_age_by_source: dict[str, int] = {}
+    for name, seconds in args.max_age_source or []:
+        if name in max_age_by_source:
+            raise ValueError(f"Duplicate --max-age-source for {name!r}")
+        max_age_by_source[name] = seconds
+    if (
+        not required_sources
+        and args.max_age_seconds is None
+        and not max_age_by_source
+    ):
+        return None
+    return SourcePolicy(
+        required_sources=required_sources,
+        max_age_seconds=args.max_age_seconds,
+        max_age_seconds_by_source=max_age_by_source,
+    )
 
 
 def _print_json(payload: object, stream) -> None:
@@ -153,7 +226,8 @@ def _cmd_resolve(args: argparse.Namespace, stdout, stderr) -> int:
         return 2
     try:
         providers = _build_providers(args)
-    except ValueError as exc:
+        policy = _build_policy(args)
+    except (ValueError, ValidationError) as exc:
         _print_error(
             stderr,
             error="VALIDATION_ERROR",
@@ -164,7 +238,7 @@ def _cmd_resolve(args: argparse.Namespace, stdout, stderr) -> int:
 
     calendars = {"XNYS": XNYSCalendar()}
     try:
-        ctx = resolve(request, calendars, providers)
+        ctx = resolve(request, calendars, providers, policy=policy)
     except ResolverError as exc:
         _print_error(
             stderr,
@@ -192,7 +266,8 @@ def _cmd_snapshot(args: argparse.Namespace, stdout, stderr) -> int:
         return 2
     try:
         providers = _build_providers(args)
-    except ValueError as exc:
+        policy = _build_policy(args)
+    except (ValueError, ValidationError) as exc:
         _print_error(
             stderr,
             error="VALIDATION_ERROR",
@@ -203,7 +278,7 @@ def _cmd_snapshot(args: argparse.Namespace, stdout, stderr) -> int:
 
     calendars = {"XNYS": XNYSCalendar()}
     try:
-        ctx = resolve(request, calendars, providers)
+        ctx = resolve(request, calendars, providers, policy=policy)
     except ResolverError as exc:
         _print_error(
             stderr,

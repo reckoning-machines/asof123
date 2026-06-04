@@ -72,6 +72,154 @@ def test_resolve_with_source_file_includes_source_status(tmp_path, capsys):
     assert body["sources"]["quotes_feed"]["provider"] == "quotes_feed"
 
 
+def test_resolve_required_source_adds_missing_status(capsys):
+    exit_code = main(
+        [
+            "resolve",
+            "--perspective", "PRE_TRADE_INTENT",
+            "--as-of-utc", "2026-05-12T12:00:00Z",
+            "--knowledge-cutoff-utc", "2026-05-12T12:00:00Z",
+            "--required-source", "quotes",
+        ]
+    )
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    body = json.loads(captured.out)
+    assert body["sources"]["quotes"]["freshness"] == "MISSING"
+    assert body["sources"]["quotes"]["reason_code"] == "REQUIRED_SOURCE_MISSING"
+
+
+def test_resolve_duplicate_required_sources_are_deduplicated(capsys):
+    exit_code = main(
+        [
+            "resolve",
+            "--perspective", "PRE_TRADE_INTENT",
+            "--as-of-utc", "2026-05-12T12:00:00Z",
+            "--knowledge-cutoff-utc", "2026-05-12T12:00:00Z",
+            "--required-source", "quotes",
+            "--required-source", "quotes",
+        ]
+    )
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    body = json.loads(captured.out)
+    assert list(body["sources"]) == ["quotes"]
+    assert body["sources"]["quotes"]["freshness"] == "MISSING"
+    assert body["sources"]["quotes"]["reason_code"] == "REQUIRED_SOURCE_MISSING"
+
+
+def test_resolve_max_age_marks_stale_source(tmp_path, capsys):
+    f = tmp_path / "quotes.json"
+    f.write_text(
+        json.dumps(
+            {
+                "provider": "quotes",
+                "freshness": "FRESH",
+                "last_update_utc": "2026-05-12T11:59:00Z",
+            }
+        )
+    )
+
+    exit_code = main(
+        [
+            "resolve",
+            "--perspective", "PRE_TRADE_INTENT",
+            "--as-of-utc", "2026-05-12T12:00:00Z",
+            "--knowledge-cutoff-utc", "2026-05-12T12:00:00Z",
+            "--source-file", f"quotes={f}",
+            "--max-age-seconds", "5",
+        ]
+    )
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    body = json.loads(captured.out)
+    assert body["sources"]["quotes"]["freshness"] == "STALE"
+    assert body["sources"]["quotes"]["reason_code"] == "SOURCE_STALE"
+
+
+def test_resolve_max_age_source_overrides_default(tmp_path, capsys):
+    f = tmp_path / "quotes.json"
+    f.write_text(
+        json.dumps(
+            {
+                "provider": "quotes",
+                "freshness": "FRESH",
+                "last_update_utc": "2026-05-12T11:59:00Z",
+            }
+        )
+    )
+
+    exit_code = main(
+        [
+            "resolve",
+            "--perspective", "PRE_TRADE_INTENT",
+            "--as-of-utc", "2026-05-12T12:00:00Z",
+            "--knowledge-cutoff-utc", "2026-05-12T12:00:00Z",
+            "--source-file", f"quotes={f}",
+            "--max-age-seconds", "5",
+            "--max-age-source", "quotes=120",
+        ]
+    )
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    body = json.loads(captured.out)
+    assert body["sources"]["quotes"]["freshness"] == "FRESH"
+    assert body["sources"]["quotes"]["reason_code"] is None
+
+
+def test_resolve_duplicate_max_age_source_is_rejected(capsys):
+    exit_code = main(
+        [
+            "resolve",
+            "--perspective", "PRE_TRADE_INTENT",
+            "--as-of-utc", "2026-05-12T12:00:00Z",
+            "--knowledge-cutoff-utc", "2026-05-12T12:00:00Z",
+            "--max-age-source", "quotes=5",
+            "--max-age-source", "quotes=10",
+        ]
+    )
+
+    assert exit_code == 2
+    captured = capsys.readouterr()
+    body = json.loads(captured.err)
+    assert body["error"] == "VALIDATION_ERROR"
+    assert body["reason_code"] == "INVALID_PROVIDER"
+    assert "Duplicate --max-age-source" in body["explanation"]
+
+
+def test_resolve_invalid_max_age_argparse_error(capsys):
+    with pytest.raises(SystemExit) as exc_info:
+        main(["resolve", "--max-age-seconds", "0"])
+
+    assert exc_info.value.code == 2
+    captured = capsys.readouterr()
+    assert "positive integer" in captured.err
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "quotes",
+        "=5",
+        "quotes=",
+        "quotes=five",
+        "quotes=0",
+        "quotes=-1",
+    ],
+)
+def test_resolve_invalid_max_age_source_argparse_error(value, capsys):
+    with pytest.raises(SystemExit) as exc_info:
+        main(["resolve", "--max-age-source", value])
+
+    assert exc_info.value.code == 2
+    captured = capsys.readouterr()
+    assert "--max-age-source" in captured.err or "positive integer" in captured.err
+
+
 def test_resolve_invalid_datetime_argparse_error(capsys):
     with pytest.raises(SystemExit) as exc_info:
         main(["resolve", "--as-of-utc", "not-a-datetime"])
@@ -114,13 +262,13 @@ def test_resolve_live_with_as_of_utc_returns_nonzero_validation_error(capsys):
     assert "LIVE" in captured.err
 
 
-def test_resolve_canonical_fails_closed_without_authority(capsys):
+def test_resolve_canonical_fails_closed_without_publication_metadata(capsys):
     exit_code = main(["resolve", "--perspective", "CANONICAL"])
     assert exit_code == 2
     captured = capsys.readouterr()
     body = json.loads(captured.err)
     assert body["error"] == "RESOLVER_ERROR"
-    assert body["reason_code"] == "CANONICAL_UNSUPPORTED"
+    assert body["reason_code"] == "PUBLICATION_METADATA_MISSING"
 
 
 def test_resolve_unknown_market_fails_closed_with_reason_code(capsys):

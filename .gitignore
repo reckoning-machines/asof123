@@ -25,3 +25,14 @@ env/
 
 # Local agent / tooling state
 .claude/
+
+# Generated / working documentation
+/docs/*.md
+!/docs/runbooks.md
+!/docs/runbooks/
+!/docs/runbooks/**
+/docs/audits/
+/docs/plans/
+/docs/contracts/
+!/docs/recipes/
+!/docs/recipes/**

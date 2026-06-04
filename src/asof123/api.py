@@ -30,6 +30,7 @@ from .calendars import XNYSCalendar
 from .enums import Perspective, SourceFreshness
 from .errors import ErrorReasonCode, ErrorResponse
 from .models import AsOfSnapshot, SourceStatus, TemporalContext
+from .policy import SourcePolicy
 from .providers import ProviderReportError, SourceProvider
 from .requests import ResolveRequest
 from .resolver import ResolverError, resolve
@@ -62,6 +63,13 @@ class SourceReportRequest(BaseModel):
         if not v:
             raise ValueError("name must be a non-empty string")
         return v
+
+
+class ResolveWithPolicyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    request: ResolveRequest
+    policy: Optional[SourcePolicy] = None
 
 
 def _validation_details(exc: RequestValidationError) -> list[dict]:
@@ -136,8 +144,17 @@ def create_app(
         return resolve(req, app.state.calendars, app.state.providers)
 
     @app.post("/asof/resolve", response_model=TemporalContext)
-    def post_resolve(req: ResolveRequest) -> TemporalContext:
-        return resolve(req, app.state.calendars, app.state.providers)
+    def post_resolve(
+        body: ResolveRequest | ResolveWithPolicyRequest,
+    ) -> TemporalContext:
+        if isinstance(body, ResolveWithPolicyRequest):
+            return resolve(
+                body.request,
+                app.state.calendars,
+                app.state.providers,
+                policy=body.policy,
+            )
+        return resolve(body, app.state.calendars, app.state.providers)
 
     @app.get("/sources/status")
     def get_sources_status():

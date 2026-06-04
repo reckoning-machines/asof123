@@ -1,369 +1,663 @@
 # asof123
 
-Every bug in finance software is secretly an "as of" bug.
-
-asof123 is an open-source temporal semantics layer for financial and
-institutional systems. It is a library and an API that resolves what
-"as of" means for a given call: which business date, which market phase,
-which perspective, which sources are fresh or stale or not yet published,
-and which knowledge cutoff and price basis apply.
-
-The canonical contract for this repository is `PRODUCT_CONTRACT.md`. This
-README is a working introduction; if it ever disagrees with the contract,
-the contract wins.
-
----
-
-## The Problem
-
-Most "data bugs" in institutional finance software are not data bugs. They
-are disagreements about "as of". The same trade, the same position, the
-same NAV, the same chart, will be reported differently by different
-services in the same firm because each service has quietly invented its
-own answer to a small set of temporal questions:
-
-- What business date are we in?
-- What market phase are we in (pre-open, open, post-close, weekend,
-  holiday, fully closed)?
-- Which sources are fresh, which are stale, which are missing, which have
-  failed, which are only available at prior close, which are partial, and
-  which have not yet been published?
-- Is this call a preview, a pre-trade intent, a live read, an executed
-  read, a canonical read, a replay, or a historical read?
-- What knowledge cutoff is admissible for this call? Can we see data that
-  arrived after the business date we are asking about?
-- Which timezone governs the interpretation of "today", "yesterday",
-  "open", and "close" for the market the caller cares about?
-- What publication state and canonical state apply to the answer being
-  produced?
-
-Each of these is small in isolation. Together, they produce the bugs that
-get blamed on "data quality": a pre-open dashboard quoting last night's
-close as if it were live, a replay job that silently sees data from after
-the date being replayed, an end-of-day report shipped before the official
-close print arrives, an intraday position view that mixes filled orders
-with intended orders, an ETL that finishes on time but reads from a stale
-upstream.
-
-asof123 exists so that every one of these systems can ask the same
-authority the same question and get the same answer.
-
-> External systems report facts.
-> asof123 resolves temporal meaning.
-
-That sentence is the entire mental model. It is repeated throughout this
-project on purpose.
-
-## What asof123 Is
-
-asof123 is:
-
-- A temporal semantics layer.
-- A semantic "as of" resolver.
-- A temporal authority for institutional systems.
-- A library, callable in-process, plus a small HTTP API for cross-service
-  use.
-
-asof123 sits above existing tools and tells them what "as of" means for a
-given call. It is intended to sit above:
-
-- pandas and numpy
-- market calendar libraries (for example pandas-market-calendars,
-  exchange_calendars)
-- ETL systems (for example Airflow, Dagster, Prefect, dbt)
-- OMS and PMS systems
-- dashboards and reporting front ends
-- replay and backtest systems
-- AI and LLM-driven analytical systems
-
-It does not replace any of those tools. It coordinates how they answer
-temporal questions.
+asof123 is a temporal authority for institutional systems.
 
 External systems report facts. asof123 resolves temporal meaning.
 
-## What asof123 Is Not
+The practical problem is duplicated time-state code. Wall Street developers
+rewrite the same fragile checks in scripts, ETL jobs, dashboards, reports,
+replay systems, research pipelines, and trading tools:
 
-asof123 is not, and must not become:
+- Is "today" the calendar date, the market business date, or the prior
+  session?
+- Is the market pre-open, open, post-close, closed, weekend, or holiday?
+- Can a replay or historical read see this source update, or did it arrive
+  after the knowledge cutoff?
+- Is this source fresh, stale, missing, failed, prior-close, partial, or not
+  published?
+- Can a canonical read proceed, or must it fail closed because the official
+  publication is not available?
 
-- Not a scheduler. It does not run jobs or fire triggers.
-- Not a workflow engine. It does not coordinate DAGs, retries, or task
-  graphs.
-- Not a distributed clock system. It does not replace NTP, PTP, TrueTime,
-  or hybrid logical clocks.
-- Not a data warehouse. It does not store historical fact tables for
-  analytics.
-- Not a temporal database. It does not provide bitemporal storage or
-  system-time versioning of arbitrary rows.
-- Not an OMS or PMS.
-- Not a replacement for pandas, numpy, or any market calendar library.
+asof123 centralizes those decisions behind a small public ontology and a
+resolver boundary. Downstream systems still fetch prices, run reports,
+orchestrate jobs, and store data. They stop inventing incompatible answers to
+"as of what?"
 
-If a feature request would push asof123 into any of these roles, it
-belongs in a different system that calls asof123, not inside asof123.
+The canonical contract for this repository is `PRODUCT_CONTRACT.md`. This
+README is an introduction. If the README and contract disagree, the contract
+wins. The current runtime boundary is defined in
+`docs/contracts/runtime_boundary_contract.md`.
 
-## Initial Ontology
+For copy-paste integration patterns, see `docs/recipes/README.md`.
 
-asof123 exposes a small, fixed vocabulary. The full list is in
-`PRODUCT_CONTRACT.md` section 3. The most important nouns:
+## What This Deletes
 
-- TemporalContext
-  The resolved answer. Bundles business date, market phase, perspective,
-  source statuses, knowledge cutoff, price basis, publication state,
-  canonical state, and the UTC instant of resolution.
+Without asof123, every caller tends to grow local rules:
 
-- Perspective
-  The named temporal viewpoint of the caller. For example PREVIEW, LIVE,
-  REPLAY.
+```python
+if now.tzinfo is None:
+    raise ValueError("bad datetime")
 
-- MarketPhase
-  The current phase of the relevant market or session. For example
-  PRE_OPEN, MARKET_OPEN, POST_CLOSE.
+if now.weekday() >= 5:
+    phase = "closed"
+elif local_time < time(9, 30):
+    phase = "pre_open"
+elif local_time < time(16, 0):
+    phase = "open"
+else:
+    phase = "post_close"
 
-- SourceProvider
-  A named external system that reports facts to asof123 (a price feed, an
-  OMS connector, an internal warehouse).
+if source_last_update > replay_cutoff:
+    usable = False
+```
 
-- SourceStatus
-  The resolved state of a SourceProvider at the resolution instant.
-  Carries a freshness value plus optional metadata (last update,
-  publication state, partial or complete, failure reason).
+With asof123, the caller asks for a `TemporalContext` and applies the same
+source policy everywhere:
 
-- KnowledgeCutoff
-  The latest UTC instant for which information is considered admissible
-  in this TemporalContext. Used to keep future-dated facts out of
-  preview, replay, and historical reads.
+```python
+ctx = resolve(request, calendars={"XNYS": XNYSCalendar()}, providers=providers)
 
-- AsOfSnapshot
-  An immutable, serializable record of a resolved TemporalContext.
-  Intended for replay, audit, and reproducibility.
+sources = apply_source_policy(
+    perspective=Perspective.REPLAY,
+    knowledge_cutoff_utc=request.knowledge_cutoff_utc,
+    now_utc=request.as_of_utc,
+    sources=ctx.sources,
+    policy=SourcePolicy(required_sources={"quotes"}, max_age_seconds=300),
+)
+```
 
-## Initial Perspectives
+The point is not less code for its own sake. The point is that business date,
+market phase, perspective, source freshness, replay cutoff, and snapshot
+identity are resolved through one vocabulary instead of being reimplemented
+with local booleans and comments.
 
-Perspectives are named so that callers cannot accidentally mix them.
+## What It Is Today
 
-- PREVIEW
-  An interactive what-if read. Must not show executed state and must
-  honor the knowledge cutoff aggressively.
+The open-source package currently implements the resolver/reference boundary
+of a temporal authority:
 
-- PRE_TRADE_INTENT
-  A read taken before an order is sent. The world reflects intent, not
-  execution.
+- `ResolveRequest` validates the caller's requested perspective, market,
+  market timezone, `as_of_utc`, and `knowledge_cutoff_utc`.
+- `TemporalContext` is the resolved answer: business date, market phase,
+  perspective, source statuses, knowledge cutoff, price basis, execution
+  state, publication state, canonical state, and resolution instant.
+- `MarketCalendar` is the calendar protocol; `XNYSCalendar` is a minimal
+  deterministic reference calendar.
+- `SourceProvider` is the fact-reporting boundary; `StaticProvider` and
+  `FileProvider` are current concrete providers.
+- `SourcePolicy` and `apply_source_policy()` cover required sources, source
+  max-age checks, and replay/historical knowledge-cutoff admissibility.
+- `AsOfSnapshot` and `make_snapshot()` produce deterministic snapshot hashes
+  for audit identity.
+- The CLI exposes `resolve`, `snapshot`, and `serve`.
+- The FastAPI app is a reference API for resolve/status/snapshot calls.
 
-- LIVE
-  A real-time operational read during the trading day. Freshness matters,
-  and stale or missing sources must be visible.
+In this repository, "temporal authority" means a contract-bound resolver that
+returns a validated `TemporalContext` or fails closed with an explicit reason.
+It does not mean this repo is a deployed production service.
 
-- EXECUTED
-  A read whose answer must reflect actual fills and cancels, not intent.
+## Guarantees Today
 
-- CANONICAL
-  The system-of-record read. Provisional values are not acceptable; if
-  the canonical source is not published yet, the call must fail closed.
+Current behavior that callers can rely on:
 
-- REPLAY
-  A reconstruction of a past TemporalContext, typically driven from an
-  AsOfSnapshot. Must not leak data that did not exist at the replayed
-  instant.
+- Naive datetimes are rejected in public request/model paths.
+- Machine instants must be UTC-aware.
+- Market timezones must be explicit IANA names such as
+  `America/New_York`.
+- `LIVE` requests cannot provide `as_of_utc` or `knowledge_cutoff_utc`.
+- `REPLAY` and `HISTORICAL` requests must provide both `as_of_utc` and
+  `knowledge_cutoff_utc`.
+- `knowledge_cutoff_utc` cannot be after `as_of_utc` when both are supplied.
+- Unknown markets, calendar mismatches, timezone mismatches, and duplicate
+  providers fail closed through `ResolverError`.
+- Provider reporting failures become `SourceStatus(freshness=FAILED)` instead
+  of disappearing.
+- Optional `SourcePolicy` makes missing required sources explicit, marks
+  replay/historical sources updated after the cutoff as `NOT_PUBLISHED`, and
+  marks sources older than configured thresholds as `STALE`.
+- `CANONICAL` resolution can return a canonical context only when exactly one
+  caller-supplied publication assertion validates and proves
+  `publication_state=PUBLISHED` plus `canonical_state=CANONICAL`.
+- `CANONICAL` resolution fails closed with an explicit publication readiness
+  reason when publication facts are missing, malformed, ambiguous, not
+  published, not canonical, after cutoff, or include unsupported lifecycle
+  metadata.
+- Snapshot hashes are deterministic for the same semantic payload.
 
-- HISTORICAL
-  An analytical read of a past period. Honors the knowledge cutoff for
-  that period and labels its sources accordingly.
+## What It Does Not Do Today
 
-These names matter because the same raw data, viewed under two different
-perspectives, must produce two different answers, and the difference must
-be auditable.
+asof123 is not:
 
-## Initial Market Phases
+- a scheduler;
+- a workflow engine;
+- a data warehouse;
+- a temporal database for arbitrary rows;
+- an OMS or PMS;
+- a broker adapter;
+- a Bloomberg adapter;
+- a mutable source registry;
+- an auth, persistence, or deployment platform;
+- a production exchange-calendar authority;
+- a persisted replay engine;
+- a full canonical publication authority.
 
-- PRE_OPEN
-- MARKET_OPEN
-- POST_CLOSE
-- WEEKEND
-- HOLIDAY
-- CLOSED
+Those systems can call asof123. They are not implemented by asof123.
 
-CLOSED is the fail-safe default whenever a more specific phase cannot be
-resolved. Code that treats an unknown phase as MARKET_OPEN is wrong.
+## Current Vocabulary
 
-## Concrete Examples
+The public ontology is defined by `PRODUCT_CONTRACT.md`. The main nouns in the
+current runtime are:
 
-These are the kinds of bugs asof123 exists to prevent.
+- `ResolveRequest`: inbound request for temporal meaning.
+- `TemporalContext`: resolved answer.
+- `Perspective`: `PREVIEW`, `PRE_TRADE_INTENT`, `LIVE`, `EXECUTED`,
+  `CANONICAL`, `REPLAY`, `HISTORICAL`.
+- `MarketPhase`: `PRE_OPEN`, `MARKET_OPEN`, `POST_CLOSE`, `WEEKEND`,
+  `HOLIDAY`, `CLOSED`.
+- `SourceProvider`: caller-supplied fact reporter.
+- `SourceStatus`: reported/resolved source state.
+- `SourcePolicy`: optional source admissibility policy.
+- `PriceBasis`: `PRIOR_CLOSE`, `LAST_TRADE`, `INDICATIVE`,
+  `OFFICIAL_CLOSE`, `SETTLEMENT`, `MODEL`, `UNKNOWN`.
+- `PublicationState`: current publication-state vocabulary.
+- `CanonicalState`: current canonical-state vocabulary.
+- `AsOfSnapshot`: immutable resolved-context audit artifact.
 
-1. Pre-open PM dashboard using prior close.
-   At 07:30 America/New_York, a portfolio manager opens a dashboard. The
-   equities feed will not start updating until the opening auction.
-   Without asof123, the dashboard quietly displays yesterday's last
-   trades as if they were live. With asof123, the resolver returns
-   `market_phase = PRE_OPEN`, `price_basis = PRIOR_CLOSE`, and
-   `sources.equities_quotes.freshness = PRIOR_CLOSE`. The dashboard
-   labels every price accordingly and the PM is not misled.
+Do not add local replacement names in downstream code. Use these names or add
+to the product contract intentionally.
 
-2. Replay job accidentally seeing future data.
-   A replay of a strategy as of business date 2026-02-10 reads from a
-   warehouse table that has since been backfilled with corrections dated
-   2026-02-11. Without asof123, the replay silently uses corrected data
-   that did not exist on the replayed date. With asof123, the replay
-   runs under `perspective = REPLAY` with `knowledge_cutoff_utc` pinned
-   to the end of 2026-02-10 in the market timezone. Any source whose
-   last update is after that cutoff is reported as
-   `freshness = NOT_PUBLISHED` for this context, and the replay refuses
-   to consume it.
+## Python: Resolve A Context
 
-3. Canonical publication not yet available.
-   A nightly report runs at 16:05 America/New_York and expects the
-   official closing print. The print is late. Without asof123, the
-   report ships using the last intraday print as if it were canonical.
-   With asof123, the report runs under `perspective = CANONICAL`, the
-   official-close SourceProvider reports `freshness = NOT_PUBLISHED`,
-   and the resolver fails closed with an explicit reason. The report
-   does not ship until the print arrives or a human overrides the
-   perspective.
+This is implemented today.
 
-4. Fills partially available intraday.
-   A risk view is rebuilt at 11:00 America/New_York. Some fills are in
-   the OMS, some are still working, some have been canceled. Without
-   asof123, the view inconsistently mixes intent and execution. With
-   asof123, the call specifies `perspective = EXECUTED`, the OMS
-   SourceProvider reports `freshness = PARTIAL` with metadata about
-   which order book slices are complete, and the view labels the
-   incomplete slices instead of pretending they are final.
+```python
+from datetime import datetime, timezone
 
-5. ETL finished but prices stale.
-   An overnight ETL completes successfully at 02:00 America/New_York,
-   but the upstream vendor feed stopped publishing at 21:00 the prior
-   day. Without asof123, downstream consumers see "ETL OK" and assume
-   the data is current. With asof123, the SourceProvider for that feed
-   reports `freshness = STALE` with `last_update_utc` pinned to 21:00,
-   and consumers can decide whether to proceed.
+from asof123 import (
+    ResolveRequest,
+    SourceFreshness,
+    SourceStatus,
+    StaticProvider,
+    XNYSCalendar,
+    resolve,
+)
 
-## Resolved TemporalContext (JSON)
+quotes = StaticProvider(
+    "quotes",
+    SourceStatus(
+        provider="quotes",
+        freshness=SourceFreshness.FRESH,
+        last_update_utc=datetime(2026, 5, 12, 13, 59, 58, tzinfo=timezone.utc),
+    ),
+)
 
-A realistic resolved TemporalContext looks like this:
+request = ResolveRequest(
+    perspective="PRE_TRADE_INTENT",
+    market="XNYS",
+    market_timezone="America/New_York",
+    as_of_utc=datetime(2026, 5, 12, 14, 0, 0, tzinfo=timezone.utc),
+)
 
-    {
-      "resolved_at_utc": "2026-05-12T13:45:00Z",
-      "perspective": "LIVE",
-      "market": "XNYS",
-      "market_timezone": "America/New_York",
-      "business_date": "2026-05-12",
-      "market_phase": "MARKET_OPEN",
-      "knowledge_cutoff_utc": "2026-05-12T13:45:00Z",
-      "price_basis": "LAST_TRADE",
-      "publication_state": "PUBLISHED",
-      "canonical_state": "PROVISIONAL",
-      "sources": {
-        "equities_quotes": {
-          "provider": "vendor_a_equities",
-          "freshness": "FRESH",
-          "last_update_utc": "2026-05-12T13:44:58Z"
-        },
-        "corporate_actions": {
-          "provider": "internal_ca_warehouse",
-          "freshness": "PRIOR_CLOSE",
-          "last_update_utc": "2026-05-11T21:05:00Z"
-        },
-        "official_close": {
-          "provider": "exchange_official_close",
-          "freshness": "NOT_PUBLISHED",
-          "expected_publication_utc": "2026-05-12T20:15:00Z"
-        }
-      }
-    }
+ctx = resolve(
+    request,
+    calendars={"XNYS": XNYSCalendar()},
+    providers=[quotes],
+)
 
-Every datetime is UTC. The market is identified by its MIC (XNYS) and
-paired with an explicit IANA timezone. There are no naive datetimes.
+if ctx.market_phase != "MARKET_OPEN":
+    raise RuntimeError(f"Cannot send order: market_phase={ctx.market_phase}")
 
-## Python Example
+if ctx.sources["quotes"].freshness != "FRESH":
+    raise RuntimeError("Cannot size order from non-fresh quotes")
+```
 
-asof123 is intended to be called in-process from any service that needs
-temporal semantics. A typical pre-trade call:
+The downstream caller no longer owns market timezone conversion, phase
+calculation, source status shape, or perspective naming.
 
-    from asof123 import ResolveRequest, XNYSCalendar, resolve
+## Python: Apply Source Policy
 
-    request = ResolveRequest(
-        perspective="PRE_TRADE_INTENT",
-        market="XNYS",
-        market_timezone="America/New_York",
+This is implemented today in Python, CLI, and the reference API.
+
+```python
+from datetime import datetime, timezone
+
+from asof123 import (
+    Perspective,
+    SourceFreshness,
+    SourcePolicy,
+    SourceStatus,
+    apply_source_policy,
+)
+
+cutoff = datetime(2026, 2, 10, 21, 0, 0, tzinfo=timezone.utc)
+as_of = datetime(2026, 2, 10, 21, 0, 0, tzinfo=timezone.utc)
+
+sources = {
+    "warehouse": SourceStatus(
+        provider="warehouse",
+        freshness=SourceFreshness.FRESH,
+        last_update_utc=datetime(2026, 2, 11, 1, 0, 0, tzinfo=timezone.utc),
     )
-    ctx = resolve(request, calendars={"XNYS": XNYSCalendar()})
+}
 
-    if ctx.market_phase != "MARKET_OPEN":
-        raise RuntimeError(
-            f"Cannot send order: market_phase={ctx.market_phase}"
-        )
+checked = apply_source_policy(
+    perspective=Perspective.REPLAY,
+    knowledge_cutoff_utc=cutoff,
+    now_utc=as_of,
+    sources=sources,
+    policy=SourcePolicy(
+        required_sources={"warehouse"},
+        max_age_seconds_by_source={"warehouse": 3600},
+    ),
+)
 
-    if ctx.execution_state == "NOT_EXECUTED":
-        # We are still in the intent phase. Read positions from the
-        # intent view, not the executed view.
-        positions = intent_positions(as_of=ctx)
-    else:
-        positions = executed_positions(as_of=ctx)
+assert checked["warehouse"].freshness == "NOT_PUBLISHED"
+```
 
-    if ctx.sources["equities_quotes"].freshness != "FRESH":
-        raise RuntimeError(
-            "Quotes are not fresh; refusing to size a new order"
-        )
+That replaces the repeated replay bug pattern:
 
-The point of the example is not the function signature. The point is
-that the semantic decisions ("are we open?", "is this intent or
-execution?", "are quotes fresh?") are centralized in a single resolver
-and a single ontology, instead of being reinvented in every caller.
+```python
+if warehouse_last_update > replay_cutoff:
+    # every job invents its own behavior here
+    raise RuntimeError("future data leak")
+```
+
+## Python: Resolve A Canonical Read
+
+This is implemented today as a narrow publication-readiness gate. It is not a
+full canonical authority platform.
+
+External systems still own the facts. They report publication metadata through
+`SourceStatus.metadata["publication"]`. asof123 resolves whether those facts
+prove a `CANONICAL` read may proceed.
+
+```python
+from datetime import datetime, timezone
+
+from asof123 import (
+    ResolveRequest,
+    SourceFreshness,
+    SourceStatus,
+    StaticProvider,
+    XNYSCalendar,
+    resolve,
+)
+
+official_close = StaticProvider(
+    "official_close",
+    SourceStatus(
+        provider="official_close",
+        freshness=SourceFreshness.FRESH,
+        metadata={
+            "publication": {
+                "publication_state": "PUBLISHED",
+                "canonical_state": "CANONICAL",
+                "publication_utc": "2026-05-12T21:05:00Z",
+                "asserted_at_utc": "2026-05-12T21:06:00Z",
+            }
+        },
+    ),
+)
+
+request = ResolveRequest(
+    perspective="CANONICAL",
+    market="XNYS",
+    market_timezone="America/New_York",
+    knowledge_cutoff_utc=datetime(2026, 5, 12, 21, 6, 0, tzinfo=timezone.utc),
+)
+
+ctx = resolve(
+    request,
+    calendars={"XNYS": XNYSCalendar()},
+    providers=[official_close],
+)
+
+assert ctx.canonical_state == "CANONICAL"
+assert ctx.publication_state == "PUBLISHED"
+```
+
+This replaces repeated downstream checks like:
+
+```python
+if official_close_published and official_close_is_final:
+    run_report()
+else:
+    fail_closed()
+```
+
+The current implementation accepts exactly one publication assertion and fails
+closed for missing, malformed, ambiguous, not-published, not-canonical,
+after-cutoff, withdrawn, or superseded publication metadata. It does not choose
+between competing publication sources.
+
+## Execution Admissibility
+
+Execution systems ask a different operational question than research systems.
+Research asks "what was knowable then?" Execution asks "what is admissible
+now?"
+
+asof123 already covers part of that boundary with existing primitives:
+`SourcePolicy`, `Perspective`, `MarketPhase`, `PriceBasis`, `SourceStatus`,
+and `TemporalContext`. It does not need execution-specific ontology to answer
+basic readiness questions.
+
+```python
+from datetime import datetime, timezone
+
+from asof123 import (
+    Perspective,
+    SourceFreshness,
+    SourcePolicy,
+    SourceStatus,
+    apply_source_policy,
+)
+
+now = datetime(2026, 5, 12, 14, 0, 0, tzinfo=timezone.utc)
+
+sources = {
+    "quotes": SourceStatus(
+        provider="quotes",
+        freshness=SourceFreshness.FRESH,
+        last_update_utc=datetime(2026, 5, 12, 13, 59, 58, tzinfo=timezone.utc),
+    ),
+    "locates": SourceStatus(
+        provider="locates",
+        freshness=SourceFreshness.FRESH,
+        last_update_utc=datetime(2026, 5, 12, 13, 55, 0, tzinfo=timezone.utc),
+    ),
+    "basket_file": SourceStatus(
+        provider="basket_file",
+        freshness=SourceFreshness.FRESH,
+        last_update_utc=datetime(2026, 5, 12, 13, 58, 0, tzinfo=timezone.utc),
+    ),
+}
+
+checked = apply_source_policy(
+    perspective=Perspective.PRE_TRADE_INTENT,
+    knowledge_cutoff_utc=now,
+    now_utc=now,
+    sources=sources,
+    policy=SourcePolicy(
+        required_sources={"quotes", "locates", "basket_file"},
+        max_age_seconds_by_source={
+            "quotes": 5,
+            "locates": 900,
+            "basket_file": 300,
+        },
+    ),
+)
+```
+
+That replaces duplicated checks like:
+
+```python
+if market_open and quotes_fresh and locates_ready and basket_file_ready:
+    send_order()
+```
+
+asof123 answers the temporal part:
+
+- are required execution facts present?
+- are they fresh enough?
+- are they stale, missing, failed, or not published?
+- did a replay/postmortem read try to use a source updated after the cutoff?
+- what `MarketPhase`, `Perspective`, and `PriceBasis` apply to the context?
+
+External systems still do the execution work:
+
+- send orders;
+- manage child orders;
+- fetch locates;
+- generate basket files;
+- upload files;
+- route orders;
+- calculate positions;
+- operate an OMS or EMS.
+
+For replay and postmortem execution analysis, use `Perspective.REPLAY` with an
+explicit `knowledge_cutoff_utc`; `SourcePolicy` marks sources whose
+`last_update_utc` is after the cutoff as not admissible. That helps answer
+"what execution facts were knowable then?" without building a replay engine.
+
+## Python: Snapshot A Resolved Context
+
+This is implemented today.
+
+```python
+from asof123 import make_snapshot
+
+snapshot = make_snapshot(ctx, snapshot_id="report-2026-05-12T14:00:00Z")
+
+print(snapshot.snapshot_schema_version)
+print(snapshot.semantic_contract_version)
+print(snapshot.content_hash)
+```
+
+Snapshots are deterministic audit artifacts. They are not a persisted replay
+engine yet.
+
+## JSON Shape
+
+A resolved `TemporalContext` has this shape:
+
+```json
+{
+  "resolved_at_utc": "2026-05-12T13:45:00Z",
+  "perspective": "LIVE",
+  "market": "XNYS",
+  "market_timezone": "America/New_York",
+  "business_date": "2026-05-12",
+  "market_phase": "MARKET_OPEN",
+  "knowledge_cutoff_utc": "2026-05-12T13:45:00Z",
+  "price_basis": "LAST_TRADE",
+  "execution_state": "NOT_EXECUTED",
+  "publication_state": "PUBLISHED",
+  "canonical_state": "PROVISIONAL",
+  "sources": {
+    "quotes": {
+      "provider": "quotes",
+      "freshness": "FRESH",
+      "last_update_utc": "2026-05-12T13:44:58Z",
+      "expected_publication_utc": null,
+      "reason_code": null,
+      "explanation": null,
+      "metadata": {}
+    }
+  }
+}
+```
+
+Every machine datetime is UTC. The market timezone is a named IANA timezone.
+The market is an explicit market code such as `XNYS`.
+
+## CLI
+
+The CLI is a thin local wrapper over the resolver and snapshot helper.
+
+```bash
+asof123 resolve \
+  --perspective PRE_TRADE_INTENT \
+  --market XNYS \
+  --market-timezone America/New_York \
+  --as-of-utc 2026-05-12T14:00:00Z
+
+asof123 snapshot \
+  --snapshot-id demo-001 \
+  --perspective PRE_TRADE_INTENT \
+  --market XNYS \
+  --market-timezone America/New_York \
+  --as-of-utc 2026-05-12T14:00:00Z
+```
+
+The CLI can read file-backed `SourceStatus` fixtures through
+`--source-file name=path` and can apply the small `SourcePolicy` surface with
+`--required-source`, `--max-age-seconds`, and `--max-age-source name=seconds`.
+
+Research/replay example: require prices and reject source updates after the
+replay cutoff.
+
+```bash
+asof123 resolve \
+  --perspective REPLAY \
+  --as-of-utc 2026-02-10T21:00:00Z \
+  --knowledge-cutoff-utc 2026-02-10T21:00:00Z \
+  --source-file quotes_feed=examples/source_status_quotes.json \
+  --required-source quotes_feed \
+  --max-age-seconds 300
+```
+
+Execution example: require quotes and locates before a `PRE_TRADE_INTENT`
+context, with a tighter quote freshness threshold.
+
+```bash
+asof123 resolve \
+  --perspective PRE_TRADE_INTENT \
+  --as-of-utc 2026-05-12T14:00:00Z \
+  --knowledge-cutoff-utc 2026-05-12T14:00:00Z \
+  --source-file quotes_feed=examples/source_status_quotes.json \
+  --required-source quotes_feed \
+  --required-source locates \
+  --max-age-source quotes_feed=5
+```
+
+A minimal canonical-read fixture can be supplied the same way:
+
+```bash
+cat > /tmp/asof123_official_close.json <<'JSON'
+{
+  "provider": "official_close",
+  "freshness": "FRESH",
+  "metadata": {
+    "publication": {
+      "publication_state": "PUBLISHED",
+      "canonical_state": "CANONICAL",
+      "publication_utc": "2026-05-12T21:05:00Z",
+      "asserted_at_utc": "2026-05-12T21:06:00Z"
+    }
+  }
+}
+JSON
+
+asof123 resolve \
+  --perspective CANONICAL \
+  --market XNYS \
+  --market-timezone America/New_York \
+  --knowledge-cutoff-utc 2026-05-12T21:06:00Z \
+  --source-file official_close=/tmp/asof123_official_close.json
+```
+
+That command reads one local `SourceStatus` file. It does not report into a
+registry, persist publication facts, poll for official close, or publish a
+report.
+
+See `docs/quickstart.md` for runnable commands and `examples/` for example
+scripts.
+
+## FastAPI Reference App
+
+The FastAPI app is a reference surface, not a production deployment layer.
+
+Current endpoints:
+
+- `GET /asof/current`
+- `POST /asof/resolve`
+- `GET /sources/status`
+- `POST /sources/report` returns 501 because there is no mutable source
+  registry.
+- `POST /asof/snapshot`
+
+The app has no auth, no persistence, no background worker, and no provider
+registry. Calendars and providers are injected when the app is constructed.
+Canonical success over the API requires constructing the app with a provider
+that reports valid publication metadata; the reference API does not let clients
+mutate a source registry at runtime.
+
+`POST /asof/resolve` also accepts an optional wrapper with policy:
+
+```json
+{
+  "request": {
+    "perspective": "PRE_TRADE_INTENT",
+    "market": "XNYS",
+    "market_timezone": "America/New_York",
+    "as_of_utc": "2026-05-12T14:00:00Z",
+    "knowledge_cutoff_utc": "2026-05-12T14:00:00Z"
+  },
+  "policy": {
+    "required_sources": ["quotes", "locates"],
+    "max_age_seconds_by_source": {
+      "quotes": 5
+    }
+  }
+}
+```
+
+The original bare `ResolveRequest` body remains supported.
+
+## Current Behavior vs Future Behavior
+
+Implemented today:
+
+- strict `ResolveRequest` validation;
+- minimal XNYS reference calendar behavior;
+- source provider reporting and provider-failure surfacing;
+- optional `SourcePolicy` for required source, max-age, and replay/historical
+  cutoff checks through Python, CLI, and the reference API;
+- deterministic `AsOfSnapshot` hashing;
+- narrow canonical publication gating from one validated caller-supplied
+  publication assertion;
+- CLI and reference API for resolve/status/snapshot.
+
+Planned future hardening:
+
+- stronger snapshot/replay identity metadata;
+- CLI/API exposure for source policy if the surface remains small;
+- richer calendar identity and unsupported-session metadata;
+- authority identity and conflict diagnostics for official close, benchmark
+  files, accounting snapshots, and similar readiness checks.
+
+Not implemented:
+
+- a broad canonical authority platform;
+- authority hierarchy or source-authority selection;
+- withdrawal or supersession handling;
+- publication conflict resolution;
+- a persisted replay engine;
+- a scheduler or polling loop;
+- a publication workflow engine;
+- production calendar coverage;
+- proprietary provider adapters.
+
+Official close and report-publication examples are currently limited to the
+narrow canonical-read gate described above. asof123 resolves readiness from
+supplied facts; it does not own those facts.
 
 ## Open-Source Boundary
 
-The open-source core of asof123 may include:
+The open-source core may include generic semantics, public models, reference
+providers, reference calendars, tests, CLI, and reference HTTP surfaces.
 
-- Timezone handling built on standard IANA tz data.
-- Basic market calendar support.
-- NYSE-style and Nasdaq-style example calendars and phase definitions.
-- Static SourceProvider implementations for tests and demos.
-- File-based SourceProvider implementations.
-- Simple Postgres freshness providers (read last-update timestamps from
-  a named table or query) if added under the public contract.
-- A FastAPI reference application.
-- A CLI reference command.
+It should not include Bloomberg integrations, proprietary OMS/PMS adapters,
+broker adapters, internal warehouse schemas, fund-accounting integrations,
+schedulers, workflow engines, or deployment-specific auth/persistence.
 
-The following adapters are intentionally outside the open-source core.
-They may exist as private or commercial integrations downstream, but
-they are not required by, and will not be merged into, this repository:
-
-- Bloomberg adapters or Bloomberg-derived data.
-- OMS and PMS integrations.
-- Broker fill adapters.
-- Internal or proprietary data warehouse adapters.
-- Internal fund accounting and fund administration systems.
-
-This boundary keeps the open-source core free of commercial license
-dependencies and free of proprietary schemas.
-
-## Quickstart
-
-See `docs/quickstart.md` for installation, the `asof123` CLI
-(`resolve`, `snapshot`, `serve`), and the runnable example scripts
-under `examples/` (`examples/resolve_demo.py`,
-`examples/snapshot_demo.py`, plus the
-`examples/source_status_quotes.json` fixture they read).
+Keeping that boundary clean is what lets asof123 remain the shared temporal
+semantics layer those systems call.
 
 ## Status
 
-This repository ships a Python library, pinned public enums and models,
-a minimal resolver, a reference XNYS calendar, static and file-backed
-SourceProvider implementations, deterministic snapshot helpers, a CLI,
-a FastAPI reference app, runnable examples, and tests.
+The current package ships a Python library, pinned public enums and models, a
+minimal resolver, a reference XNYS calendar, static and file-backed
+`SourceProvider` implementations, `SourcePolicy`, pure
+`apply_source_policy()`, deterministic snapshot helpers, a CLI, a FastAPI
+reference app, examples, and tests.
 
-Recent contract hardening added:
+The strongest value today is eliminating duplicated time-state primitives:
+UTC validation, perspective rules, source status shapes, source admissibility
+checks, basic market phase logic, narrow canonical publication gating, and
+snapshot hashing.
 
-- Typed public error payloads with stable `reason_code` values for API,
-  CLI, resolver, and provider failure paths.
-- Snapshot schema and semantic contract version fields, plus deterministic
-  snapshot payload hashing for replay and audit identity.
-- Explicit fail-closed handling for unsupported CANONICAL resolution until a
-  typed canonical authority boundary exists.
-- Calendar and timezone boundary contracts, including the limited XNYS
-  reference calendar semantics and future replay freeze requirements.
-- Runtime, standalone-repo, canonical-authority, market-calendar, error, and
-  snapshot contracts under `docs/`.
-
-There is still no persistence, no auth, no scheduler, no background worker,
-no live provider registry, no canonical authority implementation, and no
-persisted replay engine. The chronological build reports under `docs/`
-describe how each layer was added.
+The next valuable work is still small and boundary-focused: expose policy
+where useful, strengthen snapshot identity, improve calendar metadata, and
+add authority identity and publication lifecycle semantics without building a
+scheduler or workflow engine.

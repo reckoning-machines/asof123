@@ -116,6 +116,234 @@ def test_post_asof_resolve_with_replay_pinned_utc_returns_valid_response():
     assert body["knowledge_cutoff_utc"].startswith("2026-02-10T21:00:00")
 
 
+def test_post_asof_resolve_policy_wrapper_without_policy_is_backward_compatible():
+    app = create_app()
+    client = TestClient(app)
+    payload = {
+        "request": {
+            "perspective": "REPLAY",
+            "market": "XNYS",
+            "market_timezone": "America/New_York",
+            "as_of_utc": "2026-02-10T21:00:00Z",
+            "knowledge_cutoff_utc": "2026-02-10T21:00:00Z",
+        }
+    }
+
+    response = client.post("/asof/resolve", json=payload)
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["perspective"] == "REPLAY"
+    assert body["sources"] == {}
+
+
+def test_post_asof_resolve_policy_marks_missing_required_source():
+    app = create_app()
+    client = TestClient(app)
+    payload = {
+        "request": {
+            "perspective": "PRE_TRADE_INTENT",
+            "market": "XNYS",
+            "market_timezone": "America/New_York",
+            "as_of_utc": "2026-05-12T12:00:00Z",
+            "knowledge_cutoff_utc": "2026-05-12T12:00:00Z",
+        },
+        "policy": {
+            "required_sources": ["quotes"],
+        },
+    }
+
+    response = client.post("/asof/resolve", json=payload)
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["sources"]["quotes"]["freshness"] == "MISSING"
+    assert body["sources"]["quotes"]["reason_code"] == "REQUIRED_SOURCE_MISSING"
+
+
+def test_post_asof_resolve_policy_deduplicates_required_sources():
+    app = create_app()
+    client = TestClient(app)
+    payload = {
+        "request": {
+            "perspective": "PRE_TRADE_INTENT",
+            "market": "XNYS",
+            "market_timezone": "America/New_York",
+            "as_of_utc": "2026-05-12T12:00:00Z",
+            "knowledge_cutoff_utc": "2026-05-12T12:00:00Z",
+        },
+        "policy": {
+            "required_sources": ["quotes", "quotes"],
+        },
+    }
+
+    response = client.post("/asof/resolve", json=payload)
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert list(body["sources"]) == ["quotes"]
+    assert body["sources"]["quotes"]["freshness"] == "MISSING"
+    assert body["sources"]["quotes"]["reason_code"] == "REQUIRED_SOURCE_MISSING"
+
+
+def test_post_asof_resolve_policy_marks_stale_source():
+    static = StaticProvider(
+        "quotes",
+        SourceStatus(
+            provider="quotes",
+            freshness=SourceFreshness.FRESH,
+            last_update_utc=datetime(2026, 5, 12, 11, 59, 0, tzinfo=timezone.utc),
+        ),
+    )
+    app = create_app(providers=[static])
+    client = TestClient(app)
+    payload = {
+        "request": {
+            "perspective": "PRE_TRADE_INTENT",
+            "market": "XNYS",
+            "market_timezone": "America/New_York",
+            "as_of_utc": "2026-05-12T12:00:00Z",
+            "knowledge_cutoff_utc": "2026-05-12T12:00:00Z",
+        },
+        "policy": {
+            "max_age_seconds": 5,
+        },
+    }
+
+    response = client.post("/asof/resolve", json=payload)
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["sources"]["quotes"]["freshness"] == "STALE"
+    assert body["sources"]["quotes"]["reason_code"] == "SOURCE_STALE"
+
+
+def test_post_asof_resolve_policy_per_source_max_age_override():
+    static = StaticProvider(
+        "quotes",
+        SourceStatus(
+            provider="quotes",
+            freshness=SourceFreshness.FRESH,
+            last_update_utc=datetime(2026, 5, 12, 11, 59, 0, tzinfo=timezone.utc),
+        ),
+    )
+    app = create_app(providers=[static])
+    client = TestClient(app)
+    payload = {
+        "request": {
+            "perspective": "PRE_TRADE_INTENT",
+            "market": "XNYS",
+            "market_timezone": "America/New_York",
+            "as_of_utc": "2026-05-12T12:00:00Z",
+            "knowledge_cutoff_utc": "2026-05-12T12:00:00Z",
+        },
+        "policy": {
+            "max_age_seconds": 5,
+            "max_age_seconds_by_source": {
+                "quotes": 120,
+            },
+        },
+    }
+
+    response = client.post("/asof/resolve", json=payload)
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["sources"]["quotes"]["freshness"] == "FRESH"
+    assert body["sources"]["quotes"]["reason_code"] is None
+
+
+def test_post_asof_resolve_invalid_policy_returns_422():
+    app = create_app()
+    client = TestClient(app)
+    payload = {
+        "request": {
+            "perspective": "PRE_TRADE_INTENT",
+            "market": "XNYS",
+            "market_timezone": "America/New_York",
+            "as_of_utc": "2026-05-12T12:00:00Z",
+            "knowledge_cutoff_utc": "2026-05-12T12:00:00Z",
+        },
+        "policy": {
+            "max_age_seconds": 0,
+        },
+    }
+
+    response = client.post("/asof/resolve", json=payload)
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["error"] == "VALIDATION_ERROR"
+    assert body["reason_code"] == "VALIDATION_ERROR"
+    assert "max_age_seconds" in response.text
+
+
+def test_post_asof_resolve_malformed_wrapper_returns_422():
+    app = create_app()
+    client = TestClient(app)
+    payload = {
+        "perspective": "LIVE",
+        "request": {
+            "perspective": "LIVE",
+            "market": "XNYS",
+            "market_timezone": "America/New_York",
+        },
+    }
+
+    response = client.post("/asof/resolve", json=payload)
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["error"] == "VALIDATION_ERROR"
+    assert body["reason_code"] == "VALIDATION_ERROR"
+    assert "Request validation failed" in body["explanation"]
+
+
+def test_post_asof_resolve_wrapper_extra_field_returns_422():
+    app = create_app()
+    client = TestClient(app)
+    payload = {
+        "request": {
+            "perspective": "LIVE",
+            "market": "XNYS",
+            "market_timezone": "America/New_York",
+        },
+        "extra": "not allowed",
+    }
+
+    response = client.post("/asof/resolve", json=payload)
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["error"] == "VALIDATION_ERROR"
+    assert body["reason_code"] == "VALIDATION_ERROR"
+    assert "extra" in response.text
+
+
+def test_post_asof_resolve_policy_extra_field_returns_422():
+    app = create_app()
+    client = TestClient(app)
+    payload = {
+        "request": {
+            "perspective": "LIVE",
+            "market": "XNYS",
+            "market_timezone": "America/New_York",
+        },
+        "policy": {
+            "required_sources": ["quotes"],
+            "unexpected": "not allowed",
+        },
+    }
+
+    response = client.post("/asof/resolve", json=payload)
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["error"] == "VALIDATION_ERROR"
+    assert body["reason_code"] == "VALIDATION_ERROR"
+    assert "unexpected" in response.text
+
+
 def test_post_asof_resolve_with_invalid_live_as_of_utc_returns_422():
     app = create_app()
     client = TestClient(app)
@@ -134,7 +362,7 @@ def test_post_asof_resolve_with_invalid_live_as_of_utc_returns_422():
     assert "details" in body
 
 
-def test_post_asof_resolve_canonical_fails_closed_without_authority():
+def test_post_asof_resolve_canonical_fails_closed_without_publication_metadata():
     app = create_app()
     client = TestClient(app)
     payload = {
@@ -146,9 +374,9 @@ def test_post_asof_resolve_canonical_fails_closed_without_authority():
     assert response.status_code == 400
     body = response.json()
     assert body["error"] == "RESOLVER_ERROR"
-    assert body["reason_code"] == "CANONICAL_UNSUPPORTED"
-    assert "canonical authority" in body["explanation"]
-    assert "CANONICAL_UNSUPPORTED" in body["message"]
+    assert body["reason_code"] == "PUBLICATION_METADATA_MISSING"
+    assert "publication" in body["explanation"]
+    assert "PUBLICATION_METADATA_MISSING" in body["message"]
 
 
 def test_missing_calendar_returns_400_with_resolver_error():

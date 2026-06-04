@@ -54,6 +54,42 @@ def _ctx(**overrides) -> TemporalContext:
     return TemporalContext(**base)
 
 
+def _publication_metadata(**overrides) -> dict:
+    """Return deterministic publication metadata for snapshot identity tests.
+
+    Phase S1 deliberately keeps publication facts inside
+    `SourceStatus.metadata["publication"]`; there is no publication evaluator
+    and no new ontology object.
+    """
+    publication = {
+        "publication_state": PublicationState.PUBLISHED.value,
+        "canonical_state": CanonicalState.CANONICAL.value,
+        "publication_utc": "2026-05-12T21:05:00Z",
+        "asserted_at_utc": "2026-05-12T21:06:00Z",
+    }
+    publication.update(overrides)
+    return {"publication": publication}
+
+
+def _source_with_publication(metadata: dict) -> SourceStatus:
+    return SourceStatus(
+        provider="official-close",
+        freshness=SourceFreshness.FRESH,
+        last_update_utc=UTC_NOW,
+        metadata=metadata,
+    )
+
+
+def _ctx_with_publication(**publication_overrides) -> TemporalContext:
+    return _ctx(
+        sources={
+            "official_close": _source_with_publication(
+                _publication_metadata(**publication_overrides)
+            )
+        }
+    )
+
+
 def test_make_snapshot_returns_valid_as_of_snapshot():
     ctx = _ctx()
     snap = make_snapshot(ctx, "snap-1")
@@ -219,4 +255,227 @@ def test_metadata_key_order_does_not_change_canonical_hash():
     assert (
         make_snapshot(ctx_a, "a").content_hash
         == make_snapshot(ctx_b, "b").content_hash
+    )
+
+
+def test_publication_metadata_key_order_does_not_change_snapshot_hash():
+    status_a = _source_with_publication(
+        {
+            "publication": {
+                "publication_state": PublicationState.PUBLISHED.value,
+                "canonical_state": CanonicalState.CANONICAL.value,
+                "publication_utc": "2026-05-12T21:05:00Z",
+                "asserted_at_utc": "2026-05-12T21:06:00Z",
+            }
+        }
+    )
+    status_b = _source_with_publication(
+        {
+            "publication": {
+                "asserted_at_utc": "2026-05-12T21:06:00Z",
+                "publication_utc": "2026-05-12T21:05:00Z",
+                "canonical_state": CanonicalState.CANONICAL.value,
+                "publication_state": PublicationState.PUBLISHED.value,
+            }
+        }
+    )
+    ctx_a = _ctx(sources={"official_close": status_a})
+    ctx_b = _ctx(sources={"official_close": status_b})
+
+    assert (
+        make_snapshot(ctx_a, "a").content_hash
+        == make_snapshot(ctx_b, "b").content_hash
+    )
+
+
+def test_nested_publication_metadata_order_does_not_change_snapshot_hash():
+    status_a = _source_with_publication(
+        _publication_metadata(
+            assertion_id="official-close-2026-05-12-v1",
+            authority_id="official_close_reference",
+            superseded_by=None,
+            superseded_utc=None,
+            withdrawal_id=None,
+            withdrawal_utc=None,
+            explanation="Official close asserted by static test fixture",
+        )
+    )
+    status_b = _source_with_publication(
+        {
+            "publication": {
+                "withdrawal_utc": None,
+                "withdrawal_id": None,
+                "superseded_utc": None,
+                "superseded_by": None,
+                "explanation": "Official close asserted by static test fixture",
+                "authority_id": "official_close_reference",
+                "assertion_id": "official-close-2026-05-12-v1",
+                "asserted_at_utc": "2026-05-12T21:06:00Z",
+                "publication_utc": "2026-05-12T21:05:00Z",
+                "canonical_state": CanonicalState.CANONICAL.value,
+                "publication_state": PublicationState.PUBLISHED.value,
+            }
+        }
+    )
+    ctx_a = _ctx(sources={"official_close": status_a})
+    ctx_b = _ctx(sources={"official_close": status_b})
+
+    assert (
+        make_snapshot(ctx_a, "a").content_hash
+        == make_snapshot(ctx_b, "b").content_hash
+    )
+
+
+def test_publication_state_change_changes_snapshot_hash():
+    ctx_published = _ctx_with_publication(
+        publication_state=PublicationState.PUBLISHED.value
+    )
+    ctx_pre_published = _ctx_with_publication(
+        publication_state=PublicationState.PRE_PUBLISHED.value
+    )
+
+    assert (
+        make_snapshot(ctx_published, "published").content_hash
+        != make_snapshot(ctx_pre_published, "pre-published").content_hash
+    )
+
+
+def test_canonical_state_change_changes_snapshot_hash():
+    ctx_canonical = _ctx_with_publication(
+        canonical_state=CanonicalState.CANONICAL.value
+    )
+    ctx_provisional = _ctx_with_publication(
+        canonical_state=CanonicalState.PROVISIONAL.value
+    )
+
+    assert (
+        make_snapshot(ctx_canonical, "canonical").content_hash
+        != make_snapshot(ctx_provisional, "provisional").content_hash
+    )
+
+
+def test_publication_utc_change_changes_snapshot_hash():
+    ctx_initial = _ctx_with_publication(
+        publication_utc="2026-05-12T21:05:00Z"
+    )
+    ctx_later = _ctx_with_publication(
+        publication_utc="2026-05-12T21:10:00Z"
+    )
+
+    assert (
+        make_snapshot(ctx_initial, "initial").content_hash
+        != make_snapshot(ctx_later, "later").content_hash
+    )
+
+
+def test_asserted_at_utc_change_changes_snapshot_hash():
+    ctx_initial = _ctx_with_publication(
+        asserted_at_utc="2026-05-12T21:06:00Z"
+    )
+    ctx_later = _ctx_with_publication(
+        asserted_at_utc="2026-05-12T21:07:00Z"
+    )
+
+    assert (
+        make_snapshot(ctx_initial, "initial").content_hash
+        != make_snapshot(ctx_later, "later").content_hash
+    )
+
+
+def test_snapshot_audit_fields_do_not_change_publication_hash():
+    ctx = _ctx_with_publication()
+    content_hash = make_snapshot(ctx, "base").content_hash
+    snap_a = AsOfSnapshot(
+        snapshot_id="audit-record-a",
+        captured_at_utc=datetime(2026, 5, 12, 21, 10, 0, tzinfo=timezone.utc),
+        context=ctx,
+        content_hash=content_hash,
+    )
+    snap_b = AsOfSnapshot(
+        snapshot_id="audit-record-b",
+        captured_at_utc=datetime(2026, 5, 12, 21, 15, 0, tzinfo=timezone.utc),
+        context=ctx,
+        content_hash=content_hash,
+    )
+
+    assert snap_a.snapshot_id != snap_b.snapshot_id
+    assert snap_a.captured_at_utc != snap_b.captured_at_utc
+    assert snap_a.content_hash == snap_b.content_hash
+
+
+def test_publication_assertion_exactly_at_cutoff_is_identity_admissible():
+    cutoff = datetime(2026, 5, 12, 21, 6, 0, tzinfo=timezone.utc)
+    ctx = _ctx(
+        knowledge_cutoff_utc=cutoff,
+        sources={
+            "official_close": _source_with_publication(
+                _publication_metadata(
+                    publication_utc="2026-05-12T21:05:00Z",
+                    asserted_at_utc="2026-05-12T21:06:00Z",
+                )
+            )
+        },
+    )
+    first = make_snapshot(ctx, "first")
+    second = make_snapshot(ctx, "second")
+
+    assert ctx.knowledge_cutoff_utc == cutoff
+    assert first.snapshot_id != second.snapshot_id
+    assert first.content_hash == second.content_hash
+
+
+def test_publication_assertion_after_cutoff_is_identity_distinct():
+    cutoff = datetime(2026, 5, 12, 21, 6, 0, tzinfo=timezone.utc)
+    ctx_at_cutoff = _ctx(
+        knowledge_cutoff_utc=cutoff,
+        sources={
+            "official_close": _source_with_publication(
+                _publication_metadata(
+                    publication_utc="2026-05-12T21:05:00Z",
+                    asserted_at_utc="2026-05-12T21:06:00Z",
+                )
+            )
+        },
+    )
+    ctx_after_cutoff = _ctx(
+        knowledge_cutoff_utc=cutoff,
+        sources={
+            "official_close": _source_with_publication(
+                _publication_metadata(
+                    publication_utc="2026-05-12T21:05:00Z",
+                    asserted_at_utc="2026-05-12T21:07:00Z",
+                )
+            )
+        },
+    )
+
+    assert (
+        make_snapshot(ctx_at_cutoff, "at-cutoff").content_hash
+        != make_snapshot(ctx_after_cutoff, "after-cutoff").content_hash
+    )
+
+
+def test_withdrawal_metadata_changes_snapshot_hash():
+    ctx_published = _ctx_with_publication()
+    ctx_withdrawn = _ctx_with_publication(
+        withdrawal_utc="2026-05-12T21:30:00Z",
+        withdrawal_id="withdrawal-official-close-2026-05-12-v1",
+    )
+
+    assert (
+        make_snapshot(ctx_published, "published").content_hash
+        != make_snapshot(ctx_withdrawn, "withdrawn").content_hash
+    )
+
+
+def test_supersession_metadata_changes_snapshot_hash():
+    ctx_original = _ctx_with_publication()
+    ctx_superseded = _ctx_with_publication(
+        superseded_utc="2026-05-12T22:00:00Z",
+        superseded_by="official-close-2026-05-12-v2",
+    )
+
+    assert (
+        make_snapshot(ctx_original, "original").content_hash
+        != make_snapshot(ctx_superseded, "superseded").content_hash
     )

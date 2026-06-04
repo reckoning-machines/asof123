@@ -245,7 +245,7 @@ def test_resolve_non_utc_datetime_rejected_at_argparse(capsys):
 
 
 def test_resolve_live_with_as_of_utc_returns_nonzero_validation_error(capsys):
-    # LIVE forbids as_of_utc; ResolveRequest's validator rejects it.
+    # LIVE forbids as_of_utc; AsOfRequest's validator rejects it.
     exit_code = main(
         [
             "resolve",

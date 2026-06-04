@@ -28,8 +28,8 @@ own version of "as of", "fresh", "closed", "canonical", and "safe to replay".
 
 asof123 gives those decisions one vocabulary:
 
-- `ResolveRequest`
-- `TemporalContext`
+- `AsOfRequest`
+- `AsOf`
 - `Perspective`
 - `MarketPhase`
 - `SourceStatus`
@@ -38,6 +38,8 @@ asof123 gives those decisions one vocabulary:
 - `PublicationState`
 - `CanonicalState`
 - `AsOfSnapshot`
+
+An As-Of answer is represented by `AsOf`.
 
 The contract is `PRODUCT_CONTRACT.md`. If this README and the contract ever
 disagree, the contract wins.
@@ -62,10 +64,10 @@ disagree, the contract wins.
 ```python
 from datetime import datetime, timezone
 
-from asof123 import ResolveRequest, XNYSCalendar, resolve
+from asof123 import AsOfRequest, XNYSCalendar, resolve
 
-ctx = resolve(
-    ResolveRequest(
+asof = resolve(
+    AsOfRequest(
         perspective="PRE_TRADE_INTENT",
         market="XNYS",
         market_timezone="America/New_York",
@@ -74,9 +76,9 @@ ctx = resolve(
     calendars={"XNYS": XNYSCalendar()},
 )
 
-print(ctx.business_date)
-print(ctx.market_phase)
-print(ctx.price_basis)
+print(asof.business_date)
+print(asof.market_phase)
+print(asof.price_basis)
 ```
 
 ## SourcePolicy

@@ -13,6 +13,7 @@ import math
 import pytest
 from pydantic import ValidationError
 
+import asof123
 from asof123.enums import (
     CanonicalState,
     ExecutionState,
@@ -29,14 +30,29 @@ from asof123.models import (
     AsOfSnapshot,
     MarketIdentity,
     SourceStatus,
-    TemporalContext,
+    AsOf,
 )
 
 
 UTC_NOW = datetime(2026, 5, 12, 13, 45, 0, tzinfo=timezone.utc)
 
 
-def _valid_context(**overrides) -> TemporalContext:
+def test_public_asof_names_are_exported_without_old_ontology_names():
+    old_resolved_name = "Temporal" + "Context"
+    old_request_name = "Resolve" + "Request"
+    assert asof123.AsOf is AsOf
+    assert asof123.AsOfRequest is not None
+    assert asof123.AsOfSnapshot is AsOfSnapshot
+    assert "AsOf" in asof123.__all__
+    assert "AsOfRequest" in asof123.__all__
+    assert "AsOfSnapshot" in asof123.__all__
+    assert old_resolved_name not in asof123.__all__
+    assert old_request_name not in asof123.__all__
+    assert not hasattr(asof123, old_resolved_name)
+    assert not hasattr(asof123, old_request_name)
+
+
+def _valid_asof(**overrides) -> AsOf:
     base = dict(
         resolved_at_utc=UTC_NOW,
         perspective=Perspective.LIVE,
@@ -58,16 +74,16 @@ def _valid_context(**overrides) -> TemporalContext:
         },
     )
     base.update(overrides)
-    return TemporalContext(**base)
+    return AsOf(**base)
 
 
-def test_valid_temporal_context_xnys_new_york():
-    ctx = _valid_context()
-    assert ctx.market == "XNYS"
-    assert ctx.market_timezone == "America/New_York"
-    assert ctx.perspective is Perspective.LIVE
-    assert ctx.market_phase is MarketPhase.MARKET_OPEN
-    assert "equities_quotes" in ctx.sources
+def test_valid_asof_xnys_new_york():
+    asof = _valid_asof()
+    assert asof.market == "XNYS"
+    assert asof.market_timezone == "America/New_York"
+    assert asof.perspective is Perspective.LIVE
+    assert asof.market_phase is MarketPhase.MARKET_OPEN
+    assert "equities_quotes" in asof.sources
 
 
 def test_market_identity_valid():
@@ -81,16 +97,16 @@ def test_market_identity_allows_explicit_utc():
     assert ident.market_timezone == "UTC"
 
 
-def test_naive_datetime_rejected_on_temporal_context():
+def test_naive_datetime_rejected_on_asof():
     naive = datetime(2026, 5, 12, 13, 45, 0)
     with pytest.raises(ValidationError):
-        _valid_context(resolved_at_utc=naive)
+        _valid_asof(resolved_at_utc=naive)
 
 
-def test_non_utc_aware_datetime_rejected_on_temporal_context():
+def test_non_utc_aware_datetime_rejected_on_asof():
     plus_two = datetime(2026, 5, 12, 13, 45, 0, tzinfo=timezone(timedelta(hours=2)))
     with pytest.raises(ValidationError):
-        _valid_context(knowledge_cutoff_utc=plus_two)
+        _valid_asof(knowledge_cutoff_utc=plus_two)
 
 
 def test_source_status_rejects_naive_last_update():
@@ -135,9 +151,9 @@ def test_empty_market_rejected():
         MarketIdentity(market="", market_timezone="America/New_York")
 
 
-def test_empty_source_key_rejected_in_context():
+def test_empty_source_key_rejected_in_asof():
     with pytest.raises(ValidationError):
-        _valid_context(
+        _valid_asof(
             sources={"": SourceStatus(freshness=SourceFreshness.FRESH)},
         )
 
@@ -166,24 +182,24 @@ def test_source_status_metadata_rejects_non_finite_float():
 
 def test_canonical_perspective_requires_canonical_state_canonical():
     with pytest.raises(ValidationError):
-        _valid_context(
+        _valid_asof(
             perspective=Perspective.CANONICAL,
             canonical_state=CanonicalState.PROVISIONAL,
         )
 
 
 def test_canonical_perspective_with_canonical_state_ok():
-    ctx = _valid_context(
+    asof = _valid_asof(
         perspective=Perspective.CANONICAL,
         canonical_state=CanonicalState.CANONICAL,
     )
-    assert ctx.perspective is Perspective.CANONICAL
-    assert ctx.canonical_state is CanonicalState.CANONICAL
+    assert asof.perspective is Perspective.CANONICAL
+    assert asof.canonical_state is CanonicalState.CANONICAL
 
 
 def test_executed_perspective_rejects_intended_execution_state():
     with pytest.raises(ValidationError):
-        _valid_context(
+        _valid_asof(
             perspective=Perspective.EXECUTED,
             execution_state=ExecutionState.INTENDED,
         )
@@ -191,49 +207,49 @@ def test_executed_perspective_rejects_intended_execution_state():
 
 def test_executed_perspective_rejects_working_execution_state():
     with pytest.raises(ValidationError):
-        _valid_context(
+        _valid_asof(
             perspective=Perspective.EXECUTED,
             execution_state=ExecutionState.WORKING,
         )
 
 
 def test_executed_perspective_accepts_filled_execution_state():
-    ctx = _valid_context(
+    asof = _valid_asof(
         perspective=Perspective.EXECUTED,
         execution_state=ExecutionState.FILLED,
     )
-    assert ctx.execution_state is ExecutionState.FILLED
+    assert asof.execution_state is ExecutionState.FILLED
 
 
 def test_unknown_price_basis_requires_reason_and_explanation():
     with pytest.raises(ValidationError):
-        _valid_context(price_basis=PriceBasis.UNKNOWN)
+        _valid_asof(price_basis=PriceBasis.UNKNOWN)
 
 
 def test_unknown_price_basis_accepted_with_reason_and_explanation():
-    ctx = _valid_context(
+    asof = _valid_asof(
         price_basis=PriceBasis.UNKNOWN,
         reason_code="PRICE_FEED_DOWN",
         explanation="Vendor price feed has not reported since 21:00 UTC.",
     )
-    assert ctx.price_basis is PriceBasis.UNKNOWN
+    assert asof.price_basis is PriceBasis.UNKNOWN
 
 
 def test_unknown_publication_state_requires_reason_and_explanation():
     with pytest.raises(ValidationError):
-        _valid_context(publication_state=PublicationState.UNKNOWN)
+        _valid_asof(publication_state=PublicationState.UNKNOWN)
 
 
 def test_unknown_canonical_state_requires_reason_and_explanation():
     with pytest.raises(ValidationError):
-        _valid_context(canonical_state=CanonicalState.UNKNOWN)
+        _valid_asof(canonical_state=CanonicalState.UNKNOWN)
 
 
 def test_as_of_snapshot_valid():
     snap = AsOfSnapshot(
         snapshot_id="snap-1",
         captured_at_utc=UTC_NOW,
-        context=_valid_context(),
+        asof=_valid_asof(),
         content_hash="abc123",
     )
     assert snap.snapshot_id == "snap-1"
@@ -241,12 +257,12 @@ def test_as_of_snapshot_valid():
     assert snap.semantic_contract_version == SEMANTIC_CONTRACT_VERSION
     assert snap.hash_algorithm == SNAPSHOT_HASH_ALGORITHM
     assert snap.captured_at_utc == UTC_NOW
-    assert snap.context.market == "XNYS"
+    assert snap.asof.market == "XNYS"
 
 
 def test_as_of_snapshot_rejects_empty_snapshot_id():
     with pytest.raises(ValidationError):
-        AsOfSnapshot(snapshot_id="", captured_at_utc=UTC_NOW, context=_valid_context())
+        AsOfSnapshot(snapshot_id="", captured_at_utc=UTC_NOW, asof=_valid_asof())
 
 
 def test_as_of_snapshot_rejects_naive_captured_at():
@@ -254,7 +270,7 @@ def test_as_of_snapshot_rejects_naive_captured_at():
         AsOfSnapshot(
             snapshot_id="snap-2",
             captured_at_utc=datetime(2026, 5, 12, 13, 45, 0),
-            context=_valid_context(),
+            asof=_valid_asof(),
         )
 
 
@@ -264,7 +280,7 @@ def test_as_of_snapshot_rejects_non_utc_captured_at():
         AsOfSnapshot(
             snapshot_id="snap-3",
             captured_at_utc=plus_one,
-            context=_valid_context(),
+            asof=_valid_asof(),
         )
 
 
@@ -273,7 +289,7 @@ def test_as_of_snapshot_rejects_empty_content_hash():
         AsOfSnapshot(
             snapshot_id="snap-4",
             captured_at_utc=UTC_NOW,
-            context=_valid_context(),
+            asof=_valid_asof(),
             content_hash="",
         )
 
@@ -284,7 +300,7 @@ def test_as_of_snapshot_rejects_unknown_schema_version():
             snapshot_id="snap-5",
             snapshot_schema_version="asof123.snapshot.v999",
             captured_at_utc=UTC_NOW,
-            context=_valid_context(),
+            asof=_valid_asof(),
         )
 
 
@@ -294,7 +310,7 @@ def test_as_of_snapshot_rejects_unknown_semantic_contract_version():
             snapshot_id="snap-6",
             semantic_contract_version="asof123.contract.v999",
             captured_at_utc=UTC_NOW,
-            context=_valid_context(),
+            asof=_valid_asof(),
         )
 
 
@@ -304,5 +320,5 @@ def test_as_of_snapshot_rejects_unknown_hash_algorithm():
             snapshot_id="snap-7",
             hash_algorithm="md5",
             captured_at_utc=UTC_NOW,
-            context=_valid_context(),
+            asof=_valid_asof(),
         )

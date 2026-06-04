@@ -26,10 +26,10 @@ else:
 ```python
 from datetime import datetime, timezone
 
-from asof123 import ResolveRequest, XNYSCalendar, resolve
+from asof123 import AsOfRequest, XNYSCalendar, resolve
 
-ctx = resolve(
-    ResolveRequest(
+asof = resolve(
+    AsOfRequest(
         perspective="LIVE",
         market="XNYS",
         market_timezone="America/New_York",
@@ -37,15 +37,15 @@ ctx = resolve(
     calendars={"XNYS": XNYSCalendar()},
 )
 
-if ctx.market_phase != "MARKET_OPEN":
-    raise RuntimeError(f"Not a market-open context: {ctx.market_phase}")
+if asof.market_phase != "MARKET_OPEN":
+    raise RuntimeError(f"Not a market-open AsOf: {asof.market_phase}")
 ```
 
 Pinned-time test or replay-style check:
 
 ```python
-ctx = resolve(
-    ResolveRequest(
+asof = resolve(
+    AsOfRequest(
         perspective="PRE_TRADE_INTENT",
         market="XNYS",
         market_timezone="America/New_York",
@@ -57,7 +57,7 @@ ctx = resolve(
 
 ## What The Result Means
 
-`ctx.market_phase` is resolved by the supplied calendar. Downstream code can
+`asof.market_phase` is resolved by the supplied calendar. Downstream code can
 branch on the contract value `MARKET_OPEN` instead of reimplementing local
 timezone and session logic.
 
@@ -66,4 +66,3 @@ timezone and session logic.
 asof123 does not send orders, start jobs when the market opens, poll exchanges,
 or manage early-close production coverage. It resolves the phase from a
 calendar object supplied to the resolver.
-

@@ -23,7 +23,7 @@ from asof123.enums import (
     PublicationState,
     SourceFreshness,
 )
-from asof123.models import SourceStatus, TemporalContext
+from asof123.models import SourceStatus, AsOf
 from asof123.providers import ProviderReportError, StaticProvider
 
 
@@ -41,8 +41,8 @@ class _FailingProvider:
         raise ProviderReportError(self._message)
 
 
-def _sample_context() -> TemporalContext:
-    return TemporalContext(
+def _sample_asof() -> AsOf:
+    return AsOf(
         resolved_at_utc=UTC_NOW,
         perspective=Perspective.LIVE,
         market="XNYS",
@@ -471,10 +471,10 @@ def test_post_sources_report_returns_501_with_explanation():
 def test_post_asof_snapshot_returns_as_of_snapshot_with_content_hash():
     app = create_app()
     client = TestClient(app)
-    ctx = _sample_context()
+    asof = _sample_asof()
     payload = {
         "snapshot_id": "snap-1",
-        "context": ctx.model_dump(mode="json"),
+        "asof": asof.model_dump(mode="json"),
     }
     response = client.post("/asof/snapshot", json=payload)
     assert response.status_code == 200, response.text
@@ -492,8 +492,8 @@ def test_post_asof_snapshot_returns_as_of_snapshot_with_content_hash():
 def test_post_asof_snapshot_rejects_empty_snapshot_id_via_422():
     app = create_app()
     client = TestClient(app)
-    ctx = _sample_context()
-    payload = {"snapshot_id": "", "context": ctx.model_dump(mode="json")}
+    asof = _sample_asof()
+    payload = {"snapshot_id": "", "asof": asof.model_dump(mode="json")}
     response = client.post("/asof/snapshot", json=payload)
     assert response.status_code == 422
     body = response.json()

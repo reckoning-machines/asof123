@@ -54,7 +54,7 @@ class SourcePolicy(BaseModel):
 
     Fields:
     - `required_sources`: source names that must appear in the resolved
-      context. Missing required sources become explicit `MISSING` statuses.
+      AsOf. Missing required sources become explicit `MISSING` statuses.
     - `max_age_seconds`: default maximum age for any source with
       `last_update_utc`.
     - `max_age_seconds_by_source`: per-source maximum age overrides.

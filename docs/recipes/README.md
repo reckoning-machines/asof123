@@ -24,13 +24,15 @@ resolves temporal meaning from facts your systems already report.
 - [Pre-Trade Checks](pre_trade_checks.md): use existing source policy primitives
   for quote, locate, and basket-file readiness.
 - [Snapshot Audit](snapshot_audit.md): create deterministic audit identity for a
-  resolved context.
+  resolved AsOf.
 
 ## Public APIs Used
 
 The recipes use existing public APIs only:
 
-- `ResolveRequest`
+- `AsOfRequest`
+- `AsOf`
+- `AsOfSnapshot`
 - `resolve`
 - `SourcePolicy`
 - `apply_source_policy`
@@ -39,4 +41,3 @@ The recipes use existing public APIs only:
 - `make_snapshot`
 - CLI `resolve` and `snapshot`
 - API `/asof/resolve` wrapper with optional `policy`
-

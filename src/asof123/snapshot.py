@@ -1,14 +1,14 @@
 """Snapshot helpers for asof123.
 
-`make_snapshot(context, snapshot_id)` produces a replay-safe
-`AsOfSnapshot` from a `TemporalContext`. The snapshot's `content_hash`
+`make_snapshot(asof, snapshot_id)` produces a replay-safe
+`AsOfSnapshot` from an `AsOf`. The snapshot's `content_hash`
 is a SHA256 over a deterministic canonical JSON representation of the
 versioned snapshot payload, so two callers building snapshots from
-byte-equal contexts under the same schema and semantic contract will
+byte-equal AsOf answers under the same schema and semantic contract will
 compute the same hash.
 
-`canonicalize_context(context)` returns the canonical JSON string used
-to compare a bare TemporalContext. `canonicalize_snapshot_payload(context)`
+`canonicalize_asof(asof)` returns the canonical JSON string used
+to compare a bare AsOf. `canonicalize_snapshot_payload(asof)`
 returns the hash preimage used for `AsOfSnapshot.content_hash`.
 
 No persistence, no scheduling. The captured instant comes from
@@ -26,45 +26,45 @@ from .models import (
     SEMANTIC_CONTRACT_VERSION,
     SNAPSHOT_SCHEMA_VERSION,
     AsOfSnapshot,
-    TemporalContext,
+    AsOf,
 )
 
 
-def canonicalize_context(context: TemporalContext) -> str:
-    """Return a deterministic JSON string for `context`.
+def canonicalize_asof(asof: AsOf) -> str:
+    """Return a deterministic JSON string for `asof`.
 
     The output uses Pydantic's JSON-mode dump (so enum members serialize
     to their string values and datetimes serialize to ISO 8601 UTC),
     then re-serializes with `sort_keys=True` and tight separators so the
-    byte representation is stable across runs. The input context is not
+    byte representation is stable across runs. The input AsOf is not
     mutated.
     """
-    payload = context.model_dump(mode="json")
+    payload = asof.model_dump(mode="json")
     return json.dumps(
         payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
     )
 
 
-def canonicalize_snapshot_payload(context: TemporalContext) -> str:
+def canonicalize_snapshot_payload(asof: AsOf) -> str:
     """Return the hash-affecting canonical snapshot payload.
 
     Audit-only fields such as `snapshot_id`, `captured_at_utc`,
     `hash_algorithm`, and `content_hash` are intentionally excluded.
-    Schema and semantic contract versions are included so identical context
+    Schema and semantic contract versions are included so identical AsOf
     bytes under different rules cannot share a semantic content identity.
     """
     payload: dict[str, Any] = {
         "snapshot_schema_version": SNAPSHOT_SCHEMA_VERSION,
         "semantic_contract_version": SEMANTIC_CONTRACT_VERSION,
-        "context": context.model_dump(mode="json"),
+        "asof": asof.model_dump(mode="json"),
     }
     return json.dumps(
         payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
     )
 
 
-def make_snapshot(context: TemporalContext, snapshot_id: str) -> AsOfSnapshot:
-    """Return a validated `AsOfSnapshot` for `context`.
+def make_snapshot(asof: AsOf, snapshot_id: str) -> AsOfSnapshot:
+    """Return a validated `AsOfSnapshot` for `asof`.
 
     `captured_at_utc` is `datetime.now(timezone.utc)`. `content_hash` is
     the SHA256 hex digest of the UTF-8 bytes of
@@ -74,12 +74,12 @@ def make_snapshot(context: TemporalContext, snapshot_id: str) -> AsOfSnapshot:
     string) raises `pydantic.ValidationError` rather than silently
     producing a broken snapshot.
     """
-    canonical = canonicalize_snapshot_payload(context)
+    canonical = canonicalize_snapshot_payload(asof)
     content_hash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-    frozen_context = TemporalContext.model_validate(context.model_dump(mode="json"))
+    frozen_asof = AsOf.model_validate(asof.model_dump(mode="json"))
     return AsOfSnapshot(
         snapshot_id=snapshot_id,
         captured_at_utc=datetime.now(timezone.utc),
-        context=frozen_context,
+        asof=frozen_asof,
         content_hash=content_hash,
     )

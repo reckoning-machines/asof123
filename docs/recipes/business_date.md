@@ -25,19 +25,19 @@ special cases for pre-market jobs.
 ```python
 from datetime import datetime, timezone
 
-from asof123 import ResolveRequest, XNYSCalendar, resolve
+from asof123 import AsOfRequest, XNYSCalendar, resolve
 
-request = ResolveRequest(
+request = AsOfRequest(
     perspective="PRE_TRADE_INTENT",
     market="XNYS",
     market_timezone="America/New_York",
     as_of_utc=datetime(2026, 5, 12, 13, 0, 0, tzinfo=timezone.utc),
 )
 
-ctx = resolve(request, calendars={"XNYS": XNYSCalendar()})
+asof = resolve(request, calendars={"XNYS": XNYSCalendar()})
 
-print(ctx.business_date)
-print(ctx.market_phase)
+print(asof.business_date)
+print(asof.market_phase)
 ```
 
 CLI:
@@ -52,11 +52,11 @@ asof123 resolve \
 
 ## What The Result Means
 
-`ctx.business_date` is the business date resolved by the supplied market
-calendar for the requested UTC instant. `ctx.market_phase` tells the caller
+`asof.business_date` is the business date resolved by the supplied market
+calendar for the requested UTC instant. `asof.market_phase` tells the caller
 whether the market is pre-open, open, post-close, weekend, holiday, or closed.
 
-The caller gets a validated `TemporalContext` instead of local date booleans.
+The caller gets a validated `AsOf` instead of local date booleans.
 
 ## What asof123 Does Not Do
 

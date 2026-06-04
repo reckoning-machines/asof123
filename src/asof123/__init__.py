@@ -4,7 +4,7 @@ This package exposes the contract-aligned ontology, the resolver request
 and provider protocol boundary, a minimal `XNYS` reference calendar, a
 minimal in-process resolver, the first concrete provider implementations
 (`StaticProvider`, `FileProvider`), and a deterministic snapshot helper
-(`make_snapshot`, `canonicalize_context`,
+(`make_snapshot`, `canonicalize_asof`,
 `canonicalize_snapshot_payload`). It also exposes an optional
 `SourcePolicy` for required-source, freshness-age, and knowledge-cutoff
 admissibility checks, plus `apply_source_policy` for pure policy evaluation.
@@ -37,7 +37,7 @@ from .models import (
     AsOfSnapshot,
     MarketIdentity,
     SourceStatus,
-    TemporalContext,
+    AsOf,
 )
 from .providers import (
     FileProvider,
@@ -46,10 +46,10 @@ from .providers import (
     StaticProvider,
 )
 from .policy import SourcePolicy, apply_source_policy
-from .requests import ResolveRequest
+from .requests import AsOfRequest
 from .resolver import ResolverError, resolve
 from .snapshot import (
-    canonicalize_context,
+    canonicalize_asof,
     canonicalize_snapshot_payload,
     make_snapshot,
 )
@@ -87,9 +87,9 @@ __all__ = [
     "SNAPSHOT_HASH_ALGORITHM",
     "MarketIdentity",
     "SourceStatus",
-    "TemporalContext",
+    "AsOf",
     "AsOfSnapshot",
-    "ResolveRequest",
+    "AsOfRequest",
     "SourcePolicy",
     "apply_source_policy",
     "SourceProvider",
@@ -101,7 +101,7 @@ __all__ = [
     "ResolverError",
     "resolve",
     "make_snapshot",
-    "canonicalize_context",
+    "canonicalize_asof",
     "canonicalize_snapshot_payload",
     "create_app",
 ]

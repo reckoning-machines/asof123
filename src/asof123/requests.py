@@ -1,7 +1,7 @@
 """Resolver request model for asof123.
 
-`ResolveRequest` is the inbound shape for any caller asking for a
-`TemporalContext`. It enforces the contract's preconditions before any
+`AsOfRequest` is the inbound shape for any caller asking for a
+`AsOf`. It enforces the contract's preconditions before any
 resolver logic runs:
 
 - UTC for *_utc fields (timezone-aware, offset must be +00:00)
@@ -35,7 +35,7 @@ from .models import (
 )
 
 
-class ResolveRequest(BaseModel):
+class AsOfRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     perspective: Perspective
@@ -64,7 +64,7 @@ class ResolveRequest(BaseModel):
         return _require_utc(v, info.field_name or "datetime")
 
     @model_validator(mode="after")
-    def _check_cross_field_rules(self) -> "ResolveRequest":
+    def _check_cross_field_rules(self) -> "AsOfRequest":
         p = self.perspective
 
         if p in (Perspective.REPLAY, Perspective.HISTORICAL):

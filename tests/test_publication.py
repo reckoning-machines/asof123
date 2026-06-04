@@ -14,7 +14,7 @@ from asof123.publication import (
     PublicationReadinessResult,
     evaluate_publication_readiness,
 )
-from asof123.requests import ResolveRequest
+from asof123.requests import AsOfRequest
 from asof123.resolver import ResolverError, resolve
 
 
@@ -354,7 +354,7 @@ def test_null_advanced_metadata_is_ignored_until_supported():
 
 
 def test_resolver_canonical_without_publication_metadata_fails_closed():
-    request = ResolveRequest(
+    request = AsOfRequest(
         perspective=Perspective.CANONICAL,
         market="XNYS",
         market_timezone="America/New_York",

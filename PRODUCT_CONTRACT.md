@@ -10,8 +10,8 @@ conform to it.
 
 asof123 is an open-source temporal semantics layer for financial and
 institutional systems. It is not a clock service. It is not a scheduler. It
-is not a workflow engine. It resolves what "as of" means for a business
-context by combining market and session calendars, source freshness, source
+is not a workflow engine. It resolves what "as of" means for a business call
+by combining market and session calendars, source freshness, source
 authority, publication state, execution state, and named temporal
 perspectives.
 
@@ -27,7 +27,7 @@ Core principle:
 asof123 is:
 
 - A semantic "as of" resolver.
-- A central authority for temporal context in a financial or institutional
+- A central authority for temporal meaning in a financial or institutional
   system.
 - A library and an API that answers questions of the form:
   - What business date are we in?
@@ -72,10 +72,11 @@ The following nouns are the initial public ontology of asof123. Every
 implementation, API response, and documentation example must use these
 names exactly.
 
-- TemporalContext
-  The top-level resolved answer. Bundles a business date, market phase,
-  perspective, source statuses, knowledge cutoff, price basis, publication
-  state, and the UTC instant of resolution.
+- AsOf
+  The top-level resolved answer. An As-Of answer is represented by AsOf.
+  It bundles a business date, market phase, perspective, source statuses,
+  knowledge cutoff, price basis, publication state, and the UTC instant of
+  resolution.
 
 - Perspective
   A named temporal viewpoint the caller is operating under. See section 4
@@ -95,11 +96,11 @@ names exactly.
 
 - KnowledgeCutoff
   The latest instant for which information is considered admissible in the
-  current TemporalContext. Used to prevent leakage of future-dated facts
+  current AsOf. Used to prevent leakage of future-dated facts
   into preview, replay, and historical perspectives.
 
 - PriceBasis
-  The pricing convention that applies for the current TemporalContext. See
+  The pricing convention that applies for the current AsOf. See
   section 8 for the initial set.
 
 - ExecutionState
@@ -108,7 +109,7 @@ names exactly.
 
 - PublicationState
   The publication state of a given dataset, report, or document in the
-  current TemporalContext. See section 9 for the initial set.
+  current AsOf. See section 9 for the initial set.
 
 - CanonicalState
   Whether the answer is considered canonical (the system of record) or
@@ -116,7 +117,7 @@ names exactly.
   for the initial set.
 
 - BusinessDate
-  The business date associated with the current TemporalContext. This is
+  The business date associated with the current AsOf. This is
   not necessarily the calendar date in UTC and is not necessarily the
   calendar date in the caller's local time.
 
@@ -135,7 +136,7 @@ names exactly.
   providers, or implement a mutable registry.
 
 - AsOfSnapshot
-  An immutable, serializable record of a resolved TemporalContext, intended
+  An immutable, serializable record of a resolved AsOf, intended
   for replay, audit, and reproducibility. Carries explicit snapshot schema
   and semantic contract versions so persisted snapshots cannot silently be
   reinterpreted under different rules.
@@ -199,7 +200,7 @@ The initial ExecutionState values are:
 - REJECTED
 - UNKNOWN
 
-NOT_EXECUTED is the fail-safe default when execution context is not
+NOT_EXECUTED is the fail-safe default when execution state is not
 applicable or cannot be resolved (for example, a PREVIEW or
 PRE_TRADE_INTENT call against an instrument with no open orders).
 UNKNOWN is reserved for cases where execution status cannot be retrieved
@@ -219,7 +220,7 @@ The initial PriceBasis values are:
 - UNKNOWN
 
 UNKNOWN is the fail-safe default when no PriceBasis can be resolved for
-the current TemporalContext. MODEL covers any model-derived price
+the current AsOf. MODEL covers any model-derived price
 (theoretical, mark-to-model, interpolated curve) and must never be
 reported as OFFICIAL_CLOSE or SETTLEMENT. OFFICIAL_CLOSE and SETTLEMENT
 are reserved for venue-published canonical prices and must not be used
@@ -313,8 +314,8 @@ fall back to wall-clock now, and must not assume a default perspective or
 market phase.
 
 Core public models and resolver request models must require callers to
-provide the market, market_timezone, and perspective needed to resolve a
-TemporalContext. The resolver must not silently supply these values on
+provide the market, market_timezone, and perspective needed to resolve an
+AsOf. The resolver must not silently supply these values on
 behalf of an underspecified request.
 
 The reference CLI and reference HTTP app may expose documented convenience
@@ -324,9 +325,9 @@ semantics, they must be visible in help text or API parameter defaults, and
 they must still pass through the same request validation as explicit caller
 input.
 
-Resolving a current context is allowed when the caller explicitly chooses a
+Resolving a current AsOf is allowed when the caller explicitly chooses a
 current-oriented surface or perspective, such as GET /asof/current or a LIVE
-ResolveRequest with no as_of_utc. In that case, the implementation may read
+AsOfRequest with no as_of_utc. In that case, the implementation may read
 datetime.now(timezone.utc) to set the resolution instant. That is different
 from a forbidden silent wall-clock fallback. REPLAY and HISTORICAL requests
 must provide as_of_utc and knowledge_cutoff_utc; they must not substitute the
@@ -364,18 +365,18 @@ orchestrator, scheduler, source registry, persistence layer, or production
 auth boundary. It exists to demonstrate the contract over HTTP.
 
 - GET /asof/current
-  Resolve the current TemporalContext for a given perspective, market, and
+  Resolve the current AsOf for a given perspective, market, and
   market timezone. The reference app may document convenience defaults for
   interactive use, but those defaults are not core resolver defaults.
 
 - POST /asof/resolve
-  Resolve a TemporalContext for an explicit request body. The reference app
-  supports both a bare ResolveRequest and an optional wrapper with:
-  - request: ResolveRequest
+  Resolve an AsOf for an explicit request body. The reference app
+  supports both a bare AsOfRequest and an optional wrapper with:
+  - request: AsOfRequest
   - policy: SourcePolicy or null
   The wrapper is the API surface for required-source, max-age, and
   replay/historical cutoff policy. When policy is omitted, resolver behavior
-  must match the bare ResolveRequest path.
+  must match the bare AsOfRequest path.
 
 - POST /sources/report
   Reserved contract shape for future source reporting. The current reference
@@ -386,7 +387,7 @@ auth boundary. It exists to demonstrate the contract over HTTP.
   Read the current resolved state of one or more SourceProviders.
 
 - POST /asof/snapshot
-  Materialize the current or specified TemporalContext as an immutable
+  Materialize the current or specified AsOf as an immutable
   AsOfSnapshot suitable for replay and audit.
 
 All request and response bodies must obey the UTC and timezone rule in
@@ -433,7 +434,7 @@ The open-source core of asof123 may ship with:
 - File-based SourceProvider implementations (read freshness from a local
   file or directory).
 - A FastAPI reference application exposing the endpoints in section 14.
-- CLI reference commands for resolving a TemporalContext and materializing an
+- CLI reference commands for resolving an AsOf and materializing an
   AsOfSnapshot from a shell.
 
 The following are explicitly out of scope for the open-source core. They
@@ -477,7 +478,7 @@ has two layers:
 
 The current snapshot schema version is:
 
-    asof123.snapshot.v1
+    asof123.snapshot.v2
 
 The current semantic contract version is:
 
@@ -491,7 +492,7 @@ The hash-affecting payload is exactly:
 
 - snapshot_schema_version
 - semantic_contract_version
-- context
+- asof
 
 The audit-only fields are:
 
@@ -501,10 +502,10 @@ The audit-only fields are:
 - content_hash
 
 captured_at_utc is not hash-affecting. It records when the snapshot record
-was materialized, not what semantic TemporalContext it represents.
+was materialized, not what semantic AsOf it represents.
 
 snapshot_schema_version and semantic_contract_version are hash-affecting.
-The same TemporalContext under a different serialization schema or semantic
+The same AsOf under a different serialization schema or semantic
 contract must not share the same semantic content identity.
 
 Canonical snapshot payload serialization must use:
@@ -550,8 +551,8 @@ Forbidden future behavior:
 ## 20. Calendar, Timezone, and Provider Freeze Contract
 
 Current in-memory snapshots do not implement persisted replay execution. The
-v1 snapshot hash remains limited to snapshot_schema_version,
-semantic_contract_version, and context. Calendar, timezone, and provider
+v2 snapshot hash remains limited to snapshot_schema_version,
+semantic_contract_version, and asof. Calendar, timezone, and provider
 freeze metadata are required before any future persisted replay execution is
 allowed.
 
@@ -718,16 +719,16 @@ provider majority vote, or best effort.
 CANONICAL differs from other perspectives:
 
 - LIVE resolves current temporal meaning and may remain provisional.
-- EXECUTED resolves execution-context meaning and may remain non-canonical.
+- EXECUTED resolves execution-state meaning and may remain non-canonical.
 - REPLAY reproduces a historical interpretation from frozen inputs.
-- HISTORICAL resolves a pinned historical context without implying system of
+- HISTORICAL resolves a pinned historical AsOf without implying system of
   record authority.
 - CANONICAL asks the system of record whether an answer has been asserted as
   canonical under its publication rules.
 
 The current resolver implements a narrow canonical publication-readiness
 gate. This is not a full canonical authority. A CANONICAL request may return
-a TemporalContext with canonical_state=CANONICAL only when exactly one
+an AsOf with canonical_state=CANONICAL only when exactly one
 caller-supplied SourceStatus.metadata["publication"] assertion validates and
 proves all of the following:
 
@@ -741,7 +742,7 @@ proves all of the following:
 
 All other CANONICAL cases must fail closed with a typed reason code. Missing,
 malformed, incomplete, unsupported, ambiguous, not-published, not-canonical,
-or after-cutoff publication metadata must not produce a canonical context.
+or after-cutoff publication metadata must not produce a canonical AsOf.
 
 The resolver must not infer canonical_state=CANONICAL from provider
 freshness, latest timestamp, execution_state, majority agreement, price

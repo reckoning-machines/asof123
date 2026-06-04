@@ -1,4 +1,4 @@
-"""Tests for the ResolveRequest model.
+"""Tests for the AsOfRequest model.
 
 Covers per-Perspective cross-field rules (which datetime fields are
 required, forbidden, or optional), the shared UTC / IANA / uppercase-market
@@ -13,7 +13,7 @@ import pytest
 from pydantic import ValidationError
 
 from asof123.enums import Perspective
-from asof123.requests import ResolveRequest
+from asof123.requests import AsOfRequest
 
 
 UTC_NOW = datetime(2026, 5, 12, 13, 45, 0, tzinfo=timezone.utc)
@@ -24,7 +24,7 @@ UTC_PAST = datetime(2026, 2, 10, 21, 0, 0, tzinfo=timezone.utc)
 
 
 def test_live_request_without_utc_fields():
-    req = ResolveRequest(
+    req = AsOfRequest(
         perspective=Perspective.LIVE,
         market="XNYS",
         market_timezone="America/New_York",
@@ -35,7 +35,7 @@ def test_live_request_without_utc_fields():
 
 
 def test_replay_request_with_both_utc_fields():
-    req = ResolveRequest(
+    req = AsOfRequest(
         perspective=Perspective.REPLAY,
         market="XNYS",
         market_timezone="America/New_York",
@@ -47,7 +47,7 @@ def test_replay_request_with_both_utc_fields():
 
 
 def test_historical_request_with_both_utc_fields():
-    req = ResolveRequest(
+    req = AsOfRequest(
         perspective=Perspective.HISTORICAL,
         market="XNYS",
         market_timezone="America/New_York",
@@ -58,7 +58,7 @@ def test_historical_request_with_both_utc_fields():
 
 
 def test_preview_request_with_only_knowledge_cutoff():
-    req = ResolveRequest(
+    req = AsOfRequest(
         perspective=Perspective.PREVIEW,
         market="XNYS",
         market_timezone="America/New_York",
@@ -69,7 +69,7 @@ def test_preview_request_with_only_knowledge_cutoff():
 
 
 def test_pre_trade_intent_request_with_only_knowledge_cutoff():
-    req = ResolveRequest(
+    req = AsOfRequest(
         perspective=Perspective.PRE_TRADE_INTENT,
         market="XNYS",
         market_timezone="America/New_York",
@@ -79,7 +79,7 @@ def test_pre_trade_intent_request_with_only_knowledge_cutoff():
 
 
 def test_executed_request_with_both_utc_fields():
-    req = ResolveRequest(
+    req = AsOfRequest(
         perspective=Perspective.EXECUTED,
         market="XNYS",
         market_timezone="America/New_York",
@@ -90,7 +90,7 @@ def test_executed_request_with_both_utc_fields():
 
 
 def test_canonical_request_with_only_knowledge_cutoff():
-    req = ResolveRequest(
+    req = AsOfRequest(
         perspective=Perspective.CANONICAL,
         market="XNYS",
         market_timezone="America/New_York",
@@ -105,7 +105,7 @@ def test_canonical_request_with_only_knowledge_cutoff():
 
 def test_live_with_as_of_rejected():
     with pytest.raises(ValidationError, match="LIVE"):
-        ResolveRequest(
+        AsOfRequest(
             perspective=Perspective.LIVE,
             market="XNYS",
             market_timezone="America/New_York",
@@ -115,7 +115,7 @@ def test_live_with_as_of_rejected():
 
 def test_live_with_knowledge_cutoff_rejected():
     with pytest.raises(ValidationError, match="LIVE"):
-        ResolveRequest(
+        AsOfRequest(
             perspective=Perspective.LIVE,
             market="XNYS",
             market_timezone="America/New_York",
@@ -125,7 +125,7 @@ def test_live_with_knowledge_cutoff_rejected():
 
 def test_replay_without_as_of_rejected():
     with pytest.raises(ValidationError, match="REPLAY"):
-        ResolveRequest(
+        AsOfRequest(
             perspective=Perspective.REPLAY,
             market="XNYS",
             market_timezone="America/New_York",
@@ -135,7 +135,7 @@ def test_replay_without_as_of_rejected():
 
 def test_replay_without_knowledge_cutoff_rejected():
     with pytest.raises(ValidationError, match="REPLAY"):
-        ResolveRequest(
+        AsOfRequest(
             perspective=Perspective.REPLAY,
             market="XNYS",
             market_timezone="America/New_York",
@@ -145,7 +145,7 @@ def test_replay_without_knowledge_cutoff_rejected():
 
 def test_historical_missing_fields_rejected():
     with pytest.raises(ValidationError, match="HISTORICAL"):
-        ResolveRequest(
+        AsOfRequest(
             perspective=Perspective.HISTORICAL,
             market="XNYS",
             market_timezone="America/New_York",
@@ -154,7 +154,7 @@ def test_historical_missing_fields_rejected():
 
 def test_canonical_with_as_of_rejected():
     with pytest.raises(ValidationError, match="CANONICAL"):
-        ResolveRequest(
+        AsOfRequest(
             perspective=Perspective.CANONICAL,
             market="XNYS",
             market_timezone="America/New_York",
@@ -168,7 +168,7 @@ def test_canonical_with_as_of_rejected():
 def test_naive_datetime_rejected():
     naive = datetime(2026, 5, 12, 13, 45, 0)
     with pytest.raises(ValidationError):
-        ResolveRequest(
+        AsOfRequest(
             perspective=Perspective.REPLAY,
             market="XNYS",
             market_timezone="America/New_York",
@@ -180,7 +180,7 @@ def test_naive_datetime_rejected():
 def test_non_utc_datetime_rejected():
     plus_two = datetime(2026, 5, 12, tzinfo=timezone(timedelta(hours=2)))
     with pytest.raises(ValidationError):
-        ResolveRequest(
+        AsOfRequest(
             perspective=Perspective.REPLAY,
             market="XNYS",
             market_timezone="America/New_York",
@@ -191,7 +191,7 @@ def test_non_utc_datetime_rejected():
 
 def test_est_abbreviation_rejected():
     with pytest.raises(ValidationError):
-        ResolveRequest(
+        AsOfRequest(
             perspective=Perspective.LIVE,
             market="XNYS",
             market_timezone="EST",
@@ -200,7 +200,7 @@ def test_est_abbreviation_rejected():
 
 def test_lowercase_market_rejected():
     with pytest.raises(ValidationError):
-        ResolveRequest(
+        AsOfRequest(
             perspective=Perspective.LIVE,
             market="xnys",
             market_timezone="America/New_York",
@@ -213,7 +213,7 @@ def test_lowercase_market_rejected():
 def test_knowledge_cutoff_after_as_of_rejected():
     later = UTC_PAST + timedelta(days=1)
     with pytest.raises(ValidationError, match="knowledge_cutoff_utc"):
-        ResolveRequest(
+        AsOfRequest(
             perspective=Perspective.REPLAY,
             market="XNYS",
             market_timezone="America/New_York",
@@ -223,7 +223,7 @@ def test_knowledge_cutoff_after_as_of_rejected():
 
 
 def test_knowledge_cutoff_equal_to_as_of_accepted():
-    req = ResolveRequest(
+    req = AsOfRequest(
         perspective=Perspective.REPLAY,
         market="XNYS",
         market_timezone="America/New_York",
@@ -235,7 +235,7 @@ def test_knowledge_cutoff_equal_to_as_of_accepted():
 
 def test_extra_field_rejected():
     with pytest.raises(ValidationError):
-        ResolveRequest(
+        AsOfRequest(
             perspective=Perspective.LIVE,
             market="XNYS",
             market_timezone="America/New_York",

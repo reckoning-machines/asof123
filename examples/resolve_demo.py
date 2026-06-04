@@ -1,4 +1,4 @@
-"""Minimal demo: resolve a LIVE TemporalContext using a FileProvider.
+"""Minimal demo: resolve a LIVE AsOf using a FileProvider.
 
 Run from the repo root after `pip install -e .`:
 
@@ -6,7 +6,7 @@ Run from the repo root after `pip install -e .`:
 
 The script wires a single `FileProvider` (reading from
 `examples/source_status_quotes.json`) to the in-process resolver and
-prints the resulting `TemporalContext` as pretty-printed JSON. There
+prints the resulting `AsOf` as pretty-printed JSON. There
 is no argparse, no network, no environment loading, and no persistence
 in this script. It is intended as a 30-line reference for how the
 library composes.
@@ -20,7 +20,7 @@ from pathlib import Path
 from asof123.calendars import XNYSCalendar
 from asof123.enums import Perspective
 from asof123.providers import FileProvider
-from asof123.requests import ResolveRequest
+from asof123.requests import AsOfRequest
 from asof123.resolver import resolve
 
 
@@ -29,16 +29,16 @@ def main() -> None:
     quotes_file = here / "source_status_quotes.json"
 
     provider = FileProvider("quotes_feed", quotes_file)
-    request = ResolveRequest(
+    request = AsOfRequest(
         perspective=Perspective.LIVE,
         market="XNYS",
         market_timezone="America/New_York",
     )
-    context = resolve(request, {"XNYS": XNYSCalendar()}, [provider])
+    asof = resolve(request, {"XNYS": XNYSCalendar()}, [provider])
 
     print(
         json.dumps(
-            context.model_dump(mode="json"),
+            asof.model_dump(mode="json"),
             sort_keys=True,
             indent=2,
         )

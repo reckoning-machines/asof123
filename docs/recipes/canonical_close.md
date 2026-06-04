@@ -32,7 +32,7 @@ publication facts prove a canonical read is safe.
 from datetime import datetime, timezone
 
 from asof123 import (
-    ResolveRequest,
+    AsOfRequest,
     SourceFreshness,
     SourceStatus,
     StaticProvider,
@@ -56,8 +56,8 @@ official_close = StaticProvider(
     ),
 )
 
-ctx = resolve(
-    ResolveRequest(
+asof = resolve(
+    AsOfRequest(
         perspective="CANONICAL",
         market="XNYS",
         market_timezone="America/New_York",
@@ -67,13 +67,13 @@ ctx = resolve(
     providers=[official_close],
 )
 
-assert ctx.publication_state == "PUBLISHED"
-assert ctx.canonical_state == "CANONICAL"
+assert asof.publication_state == "PUBLISHED"
+assert asof.canonical_state == "CANONICAL"
 ```
 
 ## What The Result Means
 
-The resolver returns a canonical context only when exactly one supplied
+The resolver returns a canonical AsOf only when exactly one supplied
 publication assertion validates and proves:
 
 - `publication_state=PUBLISHED`;
@@ -91,4 +91,3 @@ asof123 does not publish the official close, poll for files, choose between
 competing publication authorities, persist a registry, manage report workflow,
 or implement withdrawal/supersession handling. External systems report
 publication facts; asof123 resolves readiness from those facts.
-

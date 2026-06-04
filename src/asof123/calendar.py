@@ -32,7 +32,7 @@ class MarketCalendar(Protocol):
     Implementations must satisfy the following contract:
 
     - `market` is the market code (for example `"XNYS"`) and must match
-      the value used in `TemporalContext.market` and `ResolveRequest.market`.
+      the value used in `AsOf.market` and `AsOfRequest.market`.
     - `market_timezone` is the IANA Region/City identifier (for example
       `"America/New_York"`) used to interpret the market's session.
     - `business_date_for(now_utc)` accepts a UTC-aware datetime and

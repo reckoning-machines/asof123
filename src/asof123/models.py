@@ -30,7 +30,7 @@ from .enums import (
 )
 
 
-SNAPSHOT_SCHEMA_VERSION = "asof123.snapshot.v1"
+SNAPSHOT_SCHEMA_VERSION = "asof123.snapshot.v2"
 SEMANTIC_CONTRACT_VERSION = "asof123.contract.v1"
 SNAPSHOT_HASH_ALGORITHM = "sha256"
 
@@ -176,7 +176,7 @@ class SourceStatus(BaseModel):
         return _freeze_json_value(v, "metadata")
 
 
-class TemporalContext(BaseModel):
+class AsOf(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     resolved_at_utc: datetime
@@ -218,7 +218,7 @@ class TemporalContext(BaseModel):
         return _FrozenDict(v)
 
     @model_validator(mode="after")
-    def _check_fail_closed(self) -> "TemporalContext":
+    def _check_fail_closed(self) -> "AsOf":
         if (
             self.perspective == Perspective.CANONICAL
             and self.canonical_state != CanonicalState.CANONICAL
@@ -268,7 +268,7 @@ class AsOfSnapshot(BaseModel):
     semantic_contract_version: str = SEMANTIC_CONTRACT_VERSION
     hash_algorithm: str = SNAPSHOT_HASH_ALGORITHM
     captured_at_utc: datetime
-    context: TemporalContext
+    asof: AsOf
     content_hash: Optional[str] = None
 
     @field_validator("snapshot_id")

@@ -80,7 +80,7 @@ File-backed Python integration:
 from asof123 import FileProvider
 
 quotes = FileProvider("quotes", "examples/source_status_quotes.json")
-ctx = resolve(
+asof = resolve(
     request,
     calendars={"XNYS": XNYSCalendar()},
     providers=[quotes],

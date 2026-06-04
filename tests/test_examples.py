@@ -36,7 +36,7 @@ def test_source_status_quotes_json_validates_via_file_provider():
     assert "symbol_count" in status.metadata
 
 
-def test_resolve_demo_runs_and_emits_valid_temporal_context_json(capsys):
+def test_resolve_demo_runs_and_emits_valid_asof_json(capsys):
     runpy.run_path(
         str(EXAMPLES_DIR / "resolve_demo.py"), run_name="__main__"
     )
@@ -65,7 +65,7 @@ def test_snapshot_demo_runs_and_emits_snapshot_json(capsys):
     assert body["captured_at_utc"].endswith("Z") or "+00:00" in body[
         "captured_at_utc"
     ]
-    assert body["context"]["market"] == "XNYS"
+    assert body["asof"]["market"] == "XNYS"
 
 
 def test_quickstart_md_contains_key_commands_and_example_paths():

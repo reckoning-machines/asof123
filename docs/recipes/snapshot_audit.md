@@ -3,8 +3,8 @@
 ## Problem
 
 Reports, replay jobs, and model runs need an audit identity for the resolved
-temporal context they used. Without a common snapshot helper, teams usually
-hash ad hoc JSON or store incomplete context fields.
+AsOf they used. Without a common snapshot helper, teams usually hash ad hoc
+JSON or store incomplete as-of fields.
 
 ## Code People Usually Write
 
@@ -25,10 +25,10 @@ or nested metadata determinism.
 ```python
 from datetime import datetime, timezone
 
-from asof123 import ResolveRequest, XNYSCalendar, make_snapshot, resolve
+from asof123 import AsOfRequest, XNYSCalendar, make_snapshot, resolve
 
-ctx = resolve(
-    ResolveRequest(
+asof = resolve(
+    AsOfRequest(
         perspective="PRE_TRADE_INTENT",
         market="XNYS",
         market_timezone="America/New_York",
@@ -37,7 +37,7 @@ ctx = resolve(
     calendars={"XNYS": XNYSCalendar()},
 )
 
-snapshot = make_snapshot(ctx, snapshot_id="intent-2026-05-12T14:00:00Z")
+snapshot = make_snapshot(asof, snapshot_id="intent-2026-05-12T14:00:00Z")
 
 print(snapshot.snapshot_schema_version)
 print(snapshot.semantic_contract_version)
@@ -59,7 +59,7 @@ asof123 snapshot \
 
 `make_snapshot()` produces an `AsOfSnapshot` with a deterministic content hash
 over the semantic payload: schema version, semantic contract version, and the
-resolved `TemporalContext`. Audit-only fields such as `snapshot_id` and
+resolved `AsOf`. Audit-only fields such as `snapshot_id` and
 `captured_at_utc` do not change the content hash.
 
 ## What asof123 Does Not Do
@@ -67,4 +67,3 @@ resolved `TemporalContext`. Audit-only fields such as `snapshot_id` and
 asof123 does not persist snapshots, run a replay engine, store warehouse rows,
 or guarantee production data retention. It gives callers a deterministic audit
 artifact they can store in their own systems.
-

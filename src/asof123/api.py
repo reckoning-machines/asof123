@@ -29,10 +29,10 @@ from .calendar import MarketCalendar
 from .calendars import XNYSCalendar
 from .enums import Perspective, SourceFreshness
 from .errors import ErrorReasonCode, ErrorResponse
-from .models import AsOfSnapshot, SourceStatus, TemporalContext
+from .models import AsOf, AsOfSnapshot, SourceStatus
 from .policy import SourcePolicy
 from .providers import ProviderReportError, SourceProvider
-from .requests import ResolveRequest
+from .requests import AsOfRequest
 from .resolver import ResolverError, resolve
 from .snapshot import make_snapshot
 
@@ -41,7 +41,7 @@ class SnapshotRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     snapshot_id: str
-    context: TemporalContext
+    asof: AsOf
 
     @field_validator("snapshot_id")
     @classmethod
@@ -65,10 +65,10 @@ class SourceReportRequest(BaseModel):
         return v
 
 
-class ResolveWithPolicyRequest(BaseModel):
+class AsOfWithPolicyRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    request: ResolveRequest
+    request: AsOfRequest
     policy: Optional[SourcePolicy] = None
 
 
@@ -76,7 +76,7 @@ def _validation_details(exc: RequestValidationError) -> list[dict]:
     details = []
     for item in exc.errors():
         if isinstance(item, dict):
-            details.append({k: v for k, v in item.items() if k != "ctx"})
+            details.append({k: v for k, v in item.items() if k != "asof"})
     return details
 
 
@@ -130,24 +130,24 @@ def create_app(
             content=payload.model_dump(mode="json"),
         )
 
-    @app.get("/asof/current", response_model=TemporalContext)
+    @app.get("/asof/current", response_model=AsOf)
     def get_current(
         perspective: Perspective = Perspective.LIVE,
         market: str = "XNYS",
         market_timezone: str = "America/New_York",
-    ) -> TemporalContext:
-        req = ResolveRequest(
+    ) -> AsOf:
+        req = AsOfRequest(
             perspective=perspective,
             market=market,
             market_timezone=market_timezone,
         )
         return resolve(req, app.state.calendars, app.state.providers)
 
-    @app.post("/asof/resolve", response_model=TemporalContext)
+    @app.post("/asof/resolve", response_model=AsOf)
     def post_resolve(
-        body: ResolveRequest | ResolveWithPolicyRequest,
-    ) -> TemporalContext:
-        if isinstance(body, ResolveWithPolicyRequest):
+        body: AsOfRequest | AsOfWithPolicyRequest,
+    ) -> AsOf:
+        if isinstance(body, AsOfWithPolicyRequest):
             return resolve(
                 body.request,
                 app.state.calendars,
@@ -220,6 +220,6 @@ def create_app(
 
     @app.post("/asof/snapshot", response_model=AsOfSnapshot)
     def post_snapshot(req: SnapshotRequest) -> AsOfSnapshot:
-        return make_snapshot(req.context, req.snapshot_id)
+        return make_snapshot(req.asof, req.snapshot_id)
 
     return app

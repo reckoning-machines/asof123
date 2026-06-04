@@ -16,10 +16,10 @@ from asof123.enums import (
     PublicationState,
     SourceFreshness,
 )
-from asof123.models import SourceStatus, TemporalContext
+from asof123.models import SourceStatus, AsOf
 from asof123.policy import SourcePolicy
 from asof123.providers import ProviderReportError
-from asof123.requests import ResolveRequest
+from asof123.requests import AsOfRequest
 from asof123.resolver import ResolverError, resolve
 from asof123.errors import ErrorReasonCode
 
@@ -85,44 +85,44 @@ def _publication_status(**overrides) -> SourceStatus:
     )
 
 
-def test_live_happy_path_returns_validated_temporal_context():
+def test_live_happy_path_returns_validated_asof():
     calendar = XNYSCalendar()
     provider = _FreshProvider("equities_quotes")
-    request = ResolveRequest(
+    request = AsOfRequest(
         perspective=Perspective.LIVE,
         market="XNYS",
         market_timezone="America/New_York",
     )
 
-    ctx = resolve(request, {"XNYS": calendar}, [provider])
+    asof = resolve(request, {"XNYS": calendar}, [provider])
 
-    assert isinstance(ctx, TemporalContext)
-    assert ctx.market == "XNYS"
-    assert ctx.market_timezone == "America/New_York"
-    assert ctx.perspective is Perspective.LIVE
-    assert ctx.publication_state is PublicationState.PUBLISHED
-    assert ctx.canonical_state is CanonicalState.PROVISIONAL
-    assert "equities_quotes" in ctx.sources
-    assert ctx.sources["equities_quotes"].freshness is SourceFreshness.FRESH
-    assert ctx.resolved_at_utc.utcoffset().total_seconds() == 0
+    assert isinstance(asof, AsOf)
+    assert asof.market == "XNYS"
+    assert asof.market_timezone == "America/New_York"
+    assert asof.perspective is Perspective.LIVE
+    assert asof.publication_state is PublicationState.PUBLISHED
+    assert asof.canonical_state is CanonicalState.PROVISIONAL
+    assert "equities_quotes" in asof.sources
+    assert asof.sources["equities_quotes"].freshness is SourceFreshness.FRESH
+    assert asof.resolved_at_utc.utcoffset().total_seconds() == 0
 
 
 def test_pre_trade_intent_pre_open_yields_prior_close_and_not_executed():
     calendar = XNYSCalendar()
-    request = ResolveRequest(
+    request = AsOfRequest(
         perspective=Perspective.PRE_TRADE_INTENT,
         market="XNYS",
         market_timezone="America/New_York",
         as_of_utc=_PRE_OPEN_UTC,
     )
 
-    ctx = resolve(request, {"XNYS": calendar})
+    asof = resolve(request, {"XNYS": calendar})
 
-    assert ctx.market_phase is MarketPhase.PRE_OPEN
-    assert ctx.price_basis is PriceBasis.PRIOR_CLOSE
-    assert ctx.execution_state is ExecutionState.NOT_EXECUTED
-    assert ctx.reason_code is None
-    assert ctx.explanation is None
+    assert asof.market_phase is MarketPhase.PRE_OPEN
+    assert asof.price_basis is PriceBasis.PRIOR_CLOSE
+    assert asof.execution_state is ExecutionState.NOT_EXECUTED
+    assert asof.reason_code is None
+    assert asof.explanation is None
 
 
 def test_live_market_open_with_pinned_time_yields_last_trade():
@@ -141,21 +141,21 @@ def test_live_market_open_with_pinned_time_yields_last_trade():
         def market_phase_for(self, now_utc):
             return MarketPhase.MARKET_OPEN
 
-    request = ResolveRequest(
+    request = AsOfRequest(
         perspective=Perspective.LIVE,
         market="XNYS",
         market_timezone="America/New_York",
     )
 
-    ctx = resolve(request, {"XNYS": _MarketOpenCalendar()})
+    asof = resolve(request, {"XNYS": _MarketOpenCalendar()})
 
-    assert ctx.market_phase is MarketPhase.MARKET_OPEN
-    assert ctx.price_basis is PriceBasis.LAST_TRADE
-    assert ctx.execution_state is ExecutionState.NOT_EXECUTED
+    assert asof.market_phase is MarketPhase.MARKET_OPEN
+    assert asof.price_basis is PriceBasis.LAST_TRADE
+    assert asof.execution_state is ExecutionState.NOT_EXECUTED
 
 
 def test_missing_calendar_raises_resolver_error():
-    request = ResolveRequest(
+    request = AsOfRequest(
         perspective=Perspective.LIVE,
         market="XNYS",
         market_timezone="America/New_York",
@@ -165,7 +165,7 @@ def test_missing_calendar_raises_resolver_error():
 
 
 def test_resolver_error_exposes_stable_reason_code_and_explanation():
-    request = ResolveRequest(
+    request = AsOfRequest(
         perspective=Perspective.LIVE,
         market="XNYS",
         market_timezone="America/New_York",
@@ -180,7 +180,7 @@ def test_resolver_error_exposes_stable_reason_code_and_explanation():
 
 def test_calendar_timezone_mismatch_raises_resolver_error():
     calendar = XNYSCalendar()  # America/New_York
-    request = ResolveRequest(
+    request = AsOfRequest(
         perspective=Perspective.LIVE,
         market="XNYS",
         market_timezone="Europe/London",
@@ -192,7 +192,7 @@ def test_calendar_timezone_mismatch_raises_resolver_error():
 def test_calendar_market_mismatch_raises_resolver_error():
     # Calendar registered under the wrong key.
     calendar = XNYSCalendar()
-    request = ResolveRequest(
+    request = AsOfRequest(
         perspective=Perspective.LIVE,
         market="XNAS",
         market_timezone="America/New_York",
@@ -205,7 +205,7 @@ def test_duplicate_provider_names_raise_resolver_error():
     calendar = XNYSCalendar()
     p1 = _FreshProvider("vendor_a")
     p2 = _FreshProvider("vendor_a")
-    request = ResolveRequest(
+    request = AsOfRequest(
         perspective=Perspective.LIVE,
         market="XNYS",
         market_timezone="America/New_York",
@@ -217,16 +217,16 @@ def test_duplicate_provider_names_raise_resolver_error():
 def test_provider_report_error_becomes_failed_source_status():
     calendar = XNYSCalendar()
     failing = _FailingProvider("vendor_b", "connection refused")
-    request = ResolveRequest(
+    request = AsOfRequest(
         perspective=Perspective.PRE_TRADE_INTENT,
         market="XNYS",
         market_timezone="America/New_York",
         as_of_utc=_PRE_OPEN_UTC,
     )
 
-    ctx = resolve(request, {"XNYS": calendar}, [failing])
+    asof = resolve(request, {"XNYS": calendar}, [failing])
 
-    status = ctx.sources["vendor_b"]
+    status = asof.sources["vendor_b"]
     assert status.freshness is SourceFreshness.FAILED
     assert status.reason_code == "PROVIDER_REPORT_FAILED"
     assert status.explanation is not None
@@ -236,20 +236,20 @@ def test_provider_report_error_becomes_failed_source_status():
 
 def test_source_policy_marks_missing_required_source():
     calendar = XNYSCalendar()
-    request = ResolveRequest(
+    request = AsOfRequest(
         perspective=Perspective.PRE_TRADE_INTENT,
         market="XNYS",
         market_timezone="America/New_York",
         as_of_utc=_PRE_OPEN_UTC,
     )
 
-    ctx = resolve(
+    asof = resolve(
         request,
         {"XNYS": calendar},
         policy=SourcePolicy(required_sources={"quotes_feed"}),
     )
 
-    status = ctx.sources["quotes_feed"]
+    status = asof.sources["quotes_feed"]
     assert status.provider == "quotes_feed"
     assert status.freshness is SourceFreshness.MISSING
     assert status.reason_code == "REQUIRED_SOURCE_MISSING"
@@ -259,21 +259,21 @@ def test_source_policy_marks_missing_required_source():
 def test_source_policy_required_failed_source_does_not_become_missing():
     calendar = XNYSCalendar()
     failing = _FailingProvider("quotes_feed", "upstream timeout")
-    request = ResolveRequest(
+    request = AsOfRequest(
         perspective=Perspective.PRE_TRADE_INTENT,
         market="XNYS",
         market_timezone="America/New_York",
         as_of_utc=_PRE_OPEN_UTC,
     )
 
-    ctx = resolve(
+    asof = resolve(
         request,
         {"XNYS": calendar},
         [failing],
         policy=SourcePolicy(required_sources={"quotes_feed"}),
     )
 
-    status = ctx.sources["quotes_feed"]
+    status = asof.sources["quotes_feed"]
     assert status.freshness is SourceFreshness.FAILED
     assert status.reason_code == "PROVIDER_REPORT_FAILED"
     assert "upstream timeout" in (status.explanation or "")
@@ -281,7 +281,7 @@ def test_source_policy_required_failed_source_does_not_become_missing():
 
 def test_source_policy_marks_replay_source_after_cutoff_not_published():
     calendar = XNYSCalendar()
-    request = ResolveRequest(
+    request = AsOfRequest(
         perspective=Perspective.REPLAY,
         market="XNYS",
         market_timezone="America/New_York",
@@ -297,14 +297,14 @@ def test_source_policy_marks_replay_source_after_cutoff_not_published():
         ),
     )
 
-    ctx = resolve(
+    asof = resolve(
         request,
         {"XNYS": calendar},
         [provider],
         policy=SourcePolicy(required_sources={"warehouse"}),
     )
 
-    status = ctx.sources["warehouse"]
+    status = asof.sources["warehouse"]
     assert status.freshness is SourceFreshness.NOT_PUBLISHED
     assert status.reason_code == "SOURCE_NOT_ADMISSIBLE"
     assert "knowledge_cutoff_utc" in (status.explanation or "")
@@ -313,7 +313,7 @@ def test_source_policy_marks_replay_source_after_cutoff_not_published():
 def test_source_policy_keeps_source_at_cutoff_admissible():
     calendar = XNYSCalendar()
     cutoff = datetime(2026, 2, 10, 21, 0, 0, tzinfo=timezone.utc)
-    request = ResolveRequest(
+    request = AsOfRequest(
         perspective=Perspective.REPLAY,
         market="XNYS",
         market_timezone="America/New_York",
@@ -329,14 +329,14 @@ def test_source_policy_keeps_source_at_cutoff_admissible():
         ),
     )
 
-    ctx = resolve(
+    asof = resolve(
         request,
         {"XNYS": calendar},
         [provider],
         policy=SourcePolicy(required_sources={"warehouse"}),
     )
 
-    status = ctx.sources["warehouse"]
+    status = asof.sources["warehouse"]
     assert status.freshness is SourceFreshness.FRESH
     assert status.reason_code is None
     assert status.explanation is None
@@ -345,7 +345,7 @@ def test_source_policy_keeps_source_at_cutoff_admissible():
 def test_source_policy_ignores_cutoff_and_max_age_when_last_update_missing():
     calendar = XNYSCalendar()
     cutoff = datetime(2026, 2, 10, 21, 0, 0, tzinfo=timezone.utc)
-    request = ResolveRequest(
+    request = AsOfRequest(
         perspective=Perspective.REPLAY,
         market="XNYS",
         market_timezone="America/New_York",
@@ -357,7 +357,7 @@ def test_source_policy_ignores_cutoff_and_max_age_when_last_update_missing():
         SourceStatus(provider="warehouse", freshness=SourceFreshness.FRESH),
     )
 
-    ctx = resolve(
+    asof = resolve(
         request,
         {"XNYS": calendar},
         [provider],
@@ -367,7 +367,7 @@ def test_source_policy_ignores_cutoff_and_max_age_when_last_update_missing():
         ),
     )
 
-    status = ctx.sources["warehouse"]
+    status = asof.sources["warehouse"]
     assert status.freshness is SourceFreshness.FRESH
     assert status.last_update_utc is None
     assert status.reason_code is None
@@ -376,7 +376,7 @@ def test_source_policy_ignores_cutoff_and_max_age_when_last_update_missing():
 
 def test_source_policy_marks_old_source_stale_when_age_exceeds_threshold():
     calendar = XNYSCalendar()
-    request = ResolveRequest(
+    request = AsOfRequest(
         perspective=Perspective.PRE_TRADE_INTENT,
         market="XNYS",
         market_timezone="America/New_York",
@@ -391,14 +391,14 @@ def test_source_policy_marks_old_source_stale_when_age_exceeds_threshold():
         ),
     )
 
-    ctx = resolve(
+    asof = resolve(
         request,
         {"XNYS": calendar},
         [provider],
         policy=SourcePolicy(max_age_seconds=60),
     )
 
-    status = ctx.sources["quotes_feed"]
+    status = asof.sources["quotes_feed"]
     assert status.freshness is SourceFreshness.STALE
     assert status.reason_code == "SOURCE_STALE"
     assert "max_age_seconds=60" in (status.explanation or "")
@@ -406,7 +406,7 @@ def test_source_policy_marks_old_source_stale_when_age_exceeds_threshold():
 
 def test_source_policy_preserves_provider_diagnostics_under_policy_metadata():
     calendar = XNYSCalendar()
-    request = ResolveRequest(
+    request = AsOfRequest(
         perspective=Perspective.PRE_TRADE_INTENT,
         market="XNYS",
         market_timezone="America/New_York",
@@ -424,14 +424,14 @@ def test_source_policy_preserves_provider_diagnostics_under_policy_metadata():
         ),
     )
 
-    ctx = resolve(
+    asof = resolve(
         request,
         {"XNYS": calendar},
         [provider],
         policy=SourcePolicy(max_age_seconds=60),
     )
 
-    status = ctx.sources["quotes_feed"]
+    status = asof.sources["quotes_feed"]
     assert status.freshness is SourceFreshness.STALE
     assert status.reason_code == "SOURCE_STALE"
     assert status.explanation is not None
@@ -447,7 +447,7 @@ def test_source_policy_preserves_provider_diagnostics_under_policy_metadata():
 
 def test_source_policy_does_not_overwrite_provider_stale_status():
     calendar = XNYSCalendar()
-    request = ResolveRequest(
+    request = AsOfRequest(
         perspective=Perspective.PRE_TRADE_INTENT,
         market="XNYS",
         market_timezone="America/New_York",
@@ -464,14 +464,14 @@ def test_source_policy_does_not_overwrite_provider_stale_status():
         ),
     )
 
-    ctx = resolve(
+    asof = resolve(
         request,
         {"XNYS": calendar},
         [provider],
         policy=SourcePolicy(max_age_seconds=60),
     )
 
-    status = ctx.sources["quotes_feed"]
+    status = asof.sources["quotes_feed"]
     assert status.freshness is SourceFreshness.STALE
     assert status.reason_code == "PROVIDER_STALE"
     assert status.explanation == "Provider reported stale data."
@@ -490,7 +490,7 @@ def test_source_policy_live_does_not_apply_replay_cutoff_logic():
             return MarketPhase.MARKET_OPEN
 
     future_update = datetime(2999, 1, 1, tzinfo=timezone.utc)
-    request = ResolveRequest(
+    request = AsOfRequest(
         perspective=Perspective.LIVE,
         market="XNYS",
         market_timezone="America/New_York",
@@ -504,21 +504,21 @@ def test_source_policy_live_does_not_apply_replay_cutoff_logic():
         ),
     )
 
-    ctx = resolve(
+    asof = resolve(
         request,
         {"XNYS": _MarketOpenCalendar()},
         [provider],
         policy=SourcePolicy(required_sources={"quotes_feed"}),
     )
 
-    status = ctx.sources["quotes_feed"]
+    status = asof.sources["quotes_feed"]
     assert status.freshness is SourceFreshness.FRESH
     assert status.reason_code is None
 
 
 def test_source_policy_per_source_max_age_overrides_default():
     calendar = XNYSCalendar()
-    request = ResolveRequest(
+    request = AsOfRequest(
         perspective=Perspective.PRE_TRADE_INTENT,
         market="XNYS",
         market_timezone="America/New_York",
@@ -533,7 +533,7 @@ def test_source_policy_per_source_max_age_overrides_default():
         ),
     )
 
-    ctx = resolve(
+    asof = resolve(
         request,
         {"XNYS": calendar},
         [provider],
@@ -543,34 +543,34 @@ def test_source_policy_per_source_max_age_overrides_default():
         ),
     )
 
-    status = ctx.sources["quotes_feed"]
+    status = asof.sources["quotes_feed"]
     assert status.freshness is SourceFreshness.FRESH
     assert status.reason_code is None
 
 
 def test_resolver_canonical_ready_when_single_admissible_publication_exists():
     provider = _StatusProvider("official_close", _publication_status())
-    request = ResolveRequest(
+    request = AsOfRequest(
         perspective=Perspective.CANONICAL,
         market="XNYS",
         market_timezone="America/New_York",
         knowledge_cutoff_utc=datetime(2026, 5, 12, 21, 6, 0, tzinfo=timezone.utc),
     )
 
-    ctx = resolve(request, {"XNYS": _PreOpenCalendar()}, [provider])
+    asof = resolve(request, {"XNYS": _PreOpenCalendar()}, [provider])
 
-    assert ctx.perspective is Perspective.CANONICAL
-    assert ctx.publication_state is PublicationState.PUBLISHED
-    assert ctx.canonical_state is CanonicalState.CANONICAL
-    assert ctx.price_basis is PriceBasis.PRIOR_CLOSE
-    assert ctx.reason_code is None
-    assert ctx.explanation is None
-    assert ctx.sources["official_close"].metadata["publication"]["canonical_state"] == "CANONICAL"
+    assert asof.perspective is Perspective.CANONICAL
+    assert asof.publication_state is PublicationState.PUBLISHED
+    assert asof.canonical_state is CanonicalState.CANONICAL
+    assert asof.price_basis is PriceBasis.PRIOR_CLOSE
+    assert asof.reason_code is None
+    assert asof.explanation is None
+    assert asof.sources["official_close"].metadata["publication"]["canonical_state"] == "CANONICAL"
 
 
 def test_resolver_canonical_fails_without_publication_assertion():
     provider = _FreshProvider("quotes_feed")
-    request = ResolveRequest(
+    request = AsOfRequest(
         perspective=Perspective.CANONICAL,
         market="XNYS",
         market_timezone="America/New_York",
@@ -592,7 +592,7 @@ def test_resolver_canonical_fails_when_publication_not_published():
         "official_close",
         _publication_status(publication_state=PublicationState.PRE_PUBLISHED.value),
     )
-    request = ResolveRequest(
+    request = AsOfRequest(
         perspective=Perspective.CANONICAL,
         market="XNYS",
         market_timezone="America/New_York",
@@ -609,7 +609,7 @@ def test_resolver_canonical_fails_when_not_canonical():
         "official_close",
         _publication_status(canonical_state=CanonicalState.PROVISIONAL.value),
     )
-    request = ResolveRequest(
+    request = AsOfRequest(
         perspective=Perspective.CANONICAL,
         market="XNYS",
         market_timezone="America/New_York",
@@ -626,7 +626,7 @@ def test_resolver_canonical_fails_when_multiple_assertions_exist():
         _StatusProvider("official_close_a", _publication_status()),
         _StatusProvider("official_close_b", _publication_status()),
     ]
-    request = ResolveRequest(
+    request = AsOfRequest(
         perspective=Perspective.CANONICAL,
         market="XNYS",
         market_timezone="America/New_York",
@@ -643,7 +643,7 @@ def test_resolver_canonical_fails_when_metadata_invalid():
         "official_close",
         _publication_status(publication_state="FINALISH"),
     )
-    request = ResolveRequest(
+    request = AsOfRequest(
         perspective=Perspective.CANONICAL,
         market="XNYS",
         market_timezone="America/New_York",
@@ -660,7 +660,7 @@ def test_resolver_canonical_fails_when_assertion_after_cutoff():
         "official_close",
         _publication_status(asserted_at_utc="2026-05-12T21:07:00Z"),
     )
-    request = ResolveRequest(
+    request = AsOfRequest(
         perspective=Perspective.CANONICAL,
         market="XNYS",
         market_timezone="America/New_York",
@@ -678,7 +678,7 @@ def test_resolver_canonical_fails_when_lifecycle_metadata_present():
         "official_close",
         _publication_status(withdrawal_utc="2026-05-12T21:30:00Z"),
     )
-    request = ResolveRequest(
+    request = AsOfRequest(
         perspective=Perspective.CANONICAL,
         market="XNYS",
         market_timezone="America/New_York",
@@ -692,50 +692,50 @@ def test_resolver_canonical_fails_when_lifecycle_metadata_present():
 
 def test_non_canonical_perspectives_unchanged():
     provider = _StatusProvider("official_close", _publication_status())
-    request = ResolveRequest(
+    request = AsOfRequest(
         perspective=Perspective.PRE_TRADE_INTENT,
         market="XNYS",
         market_timezone="America/New_York",
         as_of_utc=_PRE_OPEN_UTC,
     )
 
-    ctx = resolve(request, {"XNYS": XNYSCalendar()}, [provider])
+    asof = resolve(request, {"XNYS": XNYSCalendar()}, [provider])
 
-    assert ctx.perspective is Perspective.PRE_TRADE_INTENT
-    assert ctx.canonical_state is CanonicalState.PROVISIONAL
-    assert ctx.publication_state is PublicationState.PUBLISHED
+    assert asof.perspective is Perspective.PRE_TRADE_INTENT
+    assert asof.canonical_state is CanonicalState.PROVISIONAL
+    assert asof.publication_state is PublicationState.PUBLISHED
 
 
 def test_executed_with_no_execution_provider_returns_unknown_with_reason():
     calendar = XNYSCalendar()
-    request = ResolveRequest(
+    request = AsOfRequest(
         perspective=Perspective.EXECUTED,
         market="XNYS",
         market_timezone="America/New_York",
         as_of_utc=_OPEN_UTC,
     )
 
-    ctx = resolve(request, {"XNYS": calendar})
+    asof = resolve(request, {"XNYS": calendar})
 
-    assert ctx.execution_state is ExecutionState.UNKNOWN
-    assert ctx.reason_code is not None
-    assert "EXECUTION_FACTS_UNAVAILABLE" in ctx.reason_code
-    assert ctx.explanation is not None
-    assert "execution" in ctx.explanation.lower()
+    assert asof.execution_state is ExecutionState.UNKNOWN
+    assert asof.reason_code is not None
+    assert "EXECUTION_FACTS_UNAVAILABLE" in asof.reason_code
+    assert asof.explanation is not None
+    assert "execution" in asof.explanation.lower()
 
 
-def test_resolver_returns_a_valid_temporal_context_instance():
+def test_resolver_returns_a_valid_asof_instance():
     calendar = XNYSCalendar()
-    request = ResolveRequest(
+    request = AsOfRequest(
         perspective=Perspective.PRE_TRADE_INTENT,
         market="XNYS",
         market_timezone="America/New_York",
         as_of_utc=_PRE_OPEN_UTC,
     )
-    ctx = resolve(request, {"XNYS": calendar})
-    # If the resolver had assembled an invalid context, TemporalContext's
+    asof = resolve(request, {"XNYS": calendar})
+    # If the resolver had assembled an invalid AsOf, AsOf's
     # own model_validator would have raised before we got here.
-    assert isinstance(ctx, TemporalContext)
+    assert isinstance(asof, AsOf)
     # Confirm the resolver carried through key request fields.
-    assert ctx.resolved_at_utc == _PRE_OPEN_UTC
-    assert ctx.knowledge_cutoff_utc == _PRE_OPEN_UTC
+    assert asof.resolved_at_utc == _PRE_OPEN_UTC
+    assert asof.knowledge_cutoff_utc == _PRE_OPEN_UTC

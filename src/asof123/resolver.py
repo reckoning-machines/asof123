@@ -1,7 +1,7 @@
 """Minimal resolver for asof123.
 
-Composes a `ResolveRequest`, a `Mapping[str, MarketCalendar]`, and an
-`Iterable[SourceProvider]` into a `TemporalContext`. The resolver:
+Composes a `AsOfRequest`, a `Mapping[str, MarketCalendar]`, and an
+`Iterable[SourceProvider]` into a `AsOf`. The resolver:
 
 - looks up the calendar for the requested market and fails closed if it
   is missing or has mismatched metadata,
@@ -16,7 +16,7 @@ Composes a `ResolveRequest`, a `Mapping[str, MarketCalendar]`, and an
   `publication_state`, `canonical_state`, and `execution_state` and
   attaches `reason_code` / `explanation` whenever the contract's
   fail-closed rule (PRODUCT_CONTRACT.md section 13) requires it,
-- and lets `TemporalContext`'s own validator be the final guardrail.
+- and lets `AsOf`'s own validator be the final guardrail.
 
 The resolver does no IO, no scheduling, no retries, no orchestration,
 and no persistence.
@@ -39,15 +39,15 @@ from .enums import (
     SourceFreshness,
 )
 from .errors import ErrorReasonCode
-from .models import SourceStatus, TemporalContext
+from .models import SourceStatus, AsOf
 from .policy import SourcePolicy, apply_source_policy
 from .publication import evaluate_publication_readiness
 from .providers import ProviderReportError, SourceProvider
-from .requests import ResolveRequest
+from .requests import AsOfRequest
 
 
 class ResolverError(Exception):
-    """Raised when the resolver cannot safely produce a TemporalContext.
+    """Raised when the resolver cannot safely produce an AsOf.
 
     `reason_code` is the stable machine-readable identity. `explanation`
     is advisory English text. `str(error)` preserves the historical
@@ -96,11 +96,11 @@ def _resolve_execution_state(
 
 
 def resolve(
-    request: ResolveRequest,
+    request: AsOfRequest,
     calendars: Mapping[str, MarketCalendar],
     providers: Iterable[SourceProvider] = (),
     policy: Optional[SourcePolicy] = None,
-) -> TemporalContext:
+) -> AsOf:
     now_utc = (
         request.as_of_utc
         if request.as_of_utc is not None
@@ -201,7 +201,7 @@ def resolve(
         reason_code = None
         explanation = None
 
-    return TemporalContext(
+    return AsOf(
         resolved_at_utc=now_utc,
         perspective=request.perspective,
         market=request.market,

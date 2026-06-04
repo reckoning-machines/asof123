@@ -1,6 +1,6 @@
 # asof123 Quickstart
 
-Get from `git clone` to a resolved `TemporalContext` quickly.
+Get from `git clone` to a resolved `AsOf` quickly.
 
 ## Mental Model
 
@@ -36,17 +36,17 @@ pip install -e ".[serve]"
 python -m pytest -q
 ```
 
-## Resolve A Context
+## Resolve An AsOf
 
 Python:
 
 ```python
 from datetime import datetime, timezone
 
-from asof123 import ResolveRequest, XNYSCalendar, resolve
+from asof123 import AsOfRequest, XNYSCalendar, resolve
 
-ctx = resolve(
-    ResolveRequest(
+asof = resolve(
+    AsOfRequest(
         perspective="PRE_TRADE_INTENT",
         market="XNYS",
         market_timezone="America/New_York",
@@ -55,9 +55,9 @@ ctx = resolve(
     calendars={"XNYS": XNYSCalendar()},
 )
 
-print(ctx.business_date)
-print(ctx.market_phase)
-print(ctx.price_basis)
+print(asof.business_date)
+print(asof.market_phase)
+print(asof.price_basis)
 ```
 
 CLI:

@@ -3,8 +3,8 @@
 
 Subcommands:
 
-    asof123 resolve   Build a ResolveRequest, resolve in-process, print the
-                      TemporalContext as JSON.
+    asof123 resolve   Build a AsOfRequest, resolve in-process, print the
+                      AsOf as JSON.
     asof123 snapshot  Resolve and wrap the result in an AsOfSnapshot, print
                       the snapshot as JSON.
     asof123 serve     Run the FastAPI reference app via uvicorn (lazy
@@ -37,7 +37,7 @@ from .enums import Perspective
 from .errors import ErrorReasonCode, ErrorResponse
 from .policy import SourcePolicy
 from .providers import FileProvider
-from .requests import ResolveRequest
+from .requests import AsOfRequest
 from .resolver import ResolverError, resolve
 from .snapshot import make_snapshot
 
@@ -154,8 +154,8 @@ def _add_resolve_args(p: argparse.ArgumentParser) -> None:
     )
 
 
-def _build_request(args: argparse.Namespace) -> ResolveRequest:
-    return ResolveRequest(
+def _build_request(args: argparse.Namespace) -> AsOfRequest:
+    return AsOfRequest(
         perspective=Perspective(args.perspective),
         market=args.market,
         market_timezone=args.market_timezone,
@@ -238,7 +238,7 @@ def _cmd_resolve(args: argparse.Namespace, stdout, stderr) -> int:
 
     calendars = {"XNYS": XNYSCalendar()}
     try:
-        ctx = resolve(request, calendars, providers, policy=policy)
+        asof = resolve(request, calendars, providers, policy=policy)
     except ResolverError as exc:
         _print_error(
             stderr,
@@ -248,7 +248,7 @@ def _cmd_resolve(args: argparse.Namespace, stdout, stderr) -> int:
         )
         return 2
 
-    _print_json(ctx.model_dump(mode="json"), stdout)
+    _print_json(asof.model_dump(mode="json"), stdout)
     return 0
 
 
@@ -278,7 +278,7 @@ def _cmd_snapshot(args: argparse.Namespace, stdout, stderr) -> int:
 
     calendars = {"XNYS": XNYSCalendar()}
     try:
-        ctx = resolve(request, calendars, providers, policy=policy)
+        asof = resolve(request, calendars, providers, policy=policy)
     except ResolverError as exc:
         _print_error(
             stderr,
@@ -289,7 +289,7 @@ def _cmd_snapshot(args: argparse.Namespace, stdout, stderr) -> int:
         return 2
 
     try:
-        snapshot = make_snapshot(ctx, args.snapshot_id)
+        snapshot = make_snapshot(asof, args.snapshot_id)
     except ValidationError as exc:
         _print_error(
             stderr,
@@ -332,14 +332,14 @@ def _build_parser() -> argparse.ArgumentParser:
 
     resolve_p = sub.add_parser(
         "resolve",
-        help="Resolve a TemporalContext and print it as JSON",
+        help="Resolve an AsOf and print it as JSON",
     )
     _add_resolve_args(resolve_p)
 
     snapshot_p = sub.add_parser(
         "snapshot",
         help=(
-            "Resolve a TemporalContext, wrap it in an AsOfSnapshot, "
+            "Resolve an AsOf, wrap it in an AsOfSnapshot, "
             "and print the snapshot as JSON"
         ),
     )

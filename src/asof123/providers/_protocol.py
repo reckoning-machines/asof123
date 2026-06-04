@@ -38,7 +38,7 @@ class SourceProvider(Protocol):
 
     - `name` is a stable, non-empty string identifier. It is the key the
       resolver uses to look the provider up and the key under which the
-      provider's `SourceStatus` appears in `TemporalContext.sources`.
+      provider's `SourceStatus` appears in `AsOf.sources`.
     - `report(now_utc)` accepts a UTC-aware `datetime` and returns a
       `SourceStatus`. The input is the resolver's notion of "now" for
       this call; providers must treat it as UTC and must not interpret
@@ -48,8 +48,8 @@ class SourceProvider(Protocol):
       state, partial or complete coverage, failure reason. They must
       not infer market phase, business date, perspective, price basis,
       publication state of unrelated datasets, or any other
-      `TemporalContext` field.
-    - Providers must not mutate any `TemporalContext` or `AsOfSnapshot`,
+      `AsOf` field.
+    - Providers must not mutate any `AsOf` or `AsOfSnapshot`,
       directly or indirectly.
     - Providers must not perform scheduling, retry orchestration, or
       workflow logic. If retries are needed they belong in the caller

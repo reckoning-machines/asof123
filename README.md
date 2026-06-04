@@ -45,25 +45,6 @@ codebase has its own version of "as of", "fresh", "closed", "canonical", and
 asof123 is a temporal authority for institutional systems. An As-Of answer is
 represented by `AsOf`.
 
-## Embarrassingly Simple Source Timestamp Authority
-
-Every source has a different timestamp field.
-
-asof123 does not decide which field is correct. You declare which timestamp is
-authoritative:
-
-```python
-SourceStatus(
-    provider="quotes",
-    timestamp_utc=vendor_updated_at,
-    timestamp_name="vendor_updated_at",
-)
-```
-
-asof123 evaluates freshness, replay admissibility, and source policy using that
-timestamp. This is intentionally embarrassingly simple: make timestamp authority
-visible before making it sophisticated.
-
 ## Minimal Python
 
 Ask for an `AsOf`; get back the decision fields your notebook or job should use.
@@ -175,6 +156,25 @@ API wrapper:
   }
 }
 ```
+
+## Embarrassingly Simple Source Timestamp Authority
+
+Every source has a different timestamp field.
+
+asof123 does not decide which field is correct. You declare which timestamp is
+authoritative:
+
+```python
+SourceStatus(
+    provider="quotes",
+    timestamp_utc=vendor_updated_at,
+    timestamp_name="vendor_updated_at",
+)
+```
+
+asof123 evaluates freshness, replay admissibility, and source policy using that
+timestamp. This is intentionally embarrassingly simple: make timestamp authority
+visible before making it sophisticated.
 
 ## Recipes
 

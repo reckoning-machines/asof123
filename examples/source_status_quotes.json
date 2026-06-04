@@ -1,7 +1,8 @@
 {
   "provider": "quotes_feed",
   "freshness": "FRESH",
-  "last_update_utc": "2026-05-12T13:44:58Z",
+  "timestamp_utc": "2026-05-12T13:44:58Z",
+  "timestamp_name": "vendor_updated_at",
   "metadata": {
     "row_count": 9421,
     "symbol_count": 3500,

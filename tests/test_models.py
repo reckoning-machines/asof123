@@ -88,6 +88,32 @@ def test_valid_asof_xnys_new_york():
     assert "equities_quotes" in asof.sources
 
 
+def test_source_status_serializes_timestamp_authority_fields():
+    status = SourceStatus(
+        provider="quotes",
+        freshness=SourceFreshness.FRESH,
+        timestamp_utc=UTC_NOW,
+        timestamp_name="vendor_updated_at",
+    )
+
+    payload = status.model_dump(mode="json")
+
+    assert payload["timestamp_utc"].startswith("2026-05-12T13:45:00")
+    assert payload["timestamp_name"] == "vendor_updated_at"
+    assert status.last_update_utc == UTC_NOW
+
+
+def test_source_status_accepts_last_update_utc_as_legacy_timestamp():
+    status = SourceStatus(
+        provider="quotes",
+        freshness=SourceFreshness.FRESH,
+        last_update_utc=UTC_NOW,
+    )
+
+    assert status.timestamp_utc == UTC_NOW
+    assert status.last_update_utc == UTC_NOW
+
+
 def test_market_datetime_and_market_date_are_derived_from_utc_and_timezone():
     asof = _valid_asof(
         resolved_at_utc=datetime(2026, 5, 13, 4, 0, 0, tzinfo=timezone.utc),

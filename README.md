@@ -1,11 +1,13 @@
 # asof123
 
-asof123 does not tell you what time it is.
+asof123 is as-of decision infrastructure.
+
+It does not tell you what time it is.
 
 It tells you what that time means.
 
-asof123 gives notebooks, ETL jobs, dashboards, and research pipelines one
-consistent answer to:
+It gives notebooks, ETL jobs, dashboards, and research pipelines one consistent
+answer to:
 
 ```text
 As of this instant, what market date are we in?
@@ -26,7 +28,7 @@ dashboard, report runner, or trading script, this library is for you:
 if now.weekday() >= 5:
     use_previous_business_day()
 
-if quotes_last_update < now - timedelta(seconds=5):
+if quotes_timestamp < now - timedelta(seconds=5):
     block_trade()
 
 if warehouse_update > replay_cutoff:
@@ -42,6 +44,25 @@ codebase has its own version of "as of", "fresh", "closed", "canonical", and
 
 asof123 is a temporal authority for institutional systems. An As-Of answer is
 represented by `AsOf`.
+
+## Embarrassingly Simple Source Timestamp Authority
+
+Every source has a different timestamp field.
+
+asof123 does not decide which field is correct. You declare which timestamp is
+authoritative:
+
+```python
+SourceStatus(
+    provider="quotes",
+    timestamp_utc=vendor_updated_at,
+    timestamp_name="vendor_updated_at",
+)
+```
+
+asof123 evaluates freshness, replay admissibility, and source policy using that
+timestamp. This is intentionally embarrassingly simple: make timestamp authority
+visible before making it sophisticated.
 
 ## Minimal Python
 

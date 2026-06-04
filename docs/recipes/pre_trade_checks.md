@@ -45,17 +45,20 @@ sources = {
     "quotes": SourceStatus(
         provider="quotes",
         freshness=SourceFreshness.FRESH,
-        last_update_utc=datetime(2026, 5, 12, 13, 59, 58, tzinfo=timezone.utc),
+        timestamp_utc=datetime(2026, 5, 12, 13, 59, 58, tzinfo=timezone.utc),
+        timestamp_name="vendor_updated_at",
     ),
     "locates": SourceStatus(
         provider="locates",
         freshness=SourceFreshness.FRESH,
-        last_update_utc=datetime(2026, 5, 12, 13, 55, 0, tzinfo=timezone.utc),
+        timestamp_utc=datetime(2026, 5, 12, 13, 55, 0, tzinfo=timezone.utc),
+        timestamp_name="publication_time",
     ),
     "basket_file": SourceStatus(
         provider="basket_file",
         freshness=SourceFreshness.FRESH,
-        last_update_utc=datetime(2026, 5, 12, 13, 58, 0, tzinfo=timezone.utc),
+        timestamp_utc=datetime(2026, 5, 12, 13, 58, 0, tzinfo=timezone.utc),
+        timestamp_name="file_timestamp",
     ),
 }
 
@@ -104,4 +107,3 @@ asof123 does not send orders, manage child orders, fetch locates, generate
 basket files, upload files, route orders, calculate positions, or operate an
 OMS/EMS/PMS. It only resolves the temporal meaning of facts supplied by those
 systems.
-

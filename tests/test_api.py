@@ -473,7 +473,8 @@ def test_get_sources_status_returns_static_provider_status():
         SourceStatus(
             provider="quotes_feed",
             freshness=SourceFreshness.FRESH,
-            last_update_utc=UTC_NOW,
+            timestamp_utc=UTC_NOW,
+            timestamp_name="vendor_updated_at",
         ),
     )
     app = create_app(providers=[static])
@@ -484,6 +485,8 @@ def test_get_sources_status_returns_static_provider_status():
     assert "quotes_feed" in body
     assert body["quotes_feed"]["freshness"] == "FRESH"
     assert body["quotes_feed"]["provider"] == "quotes_feed"
+    assert body["quotes_feed"]["timestamp_utc"].startswith("2026-05-12T13:45:00")
+    assert body["quotes_feed"]["timestamp_name"] == "vendor_updated_at"
 
 
 def test_get_sources_status_converts_provider_report_error_to_failed():

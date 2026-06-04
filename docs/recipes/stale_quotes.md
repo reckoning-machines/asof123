@@ -18,7 +18,7 @@ diverges.
 if "quotes" not in sources:
     raise RuntimeError("missing quotes")
 
-age = (now_utc - quotes_last_update_utc).total_seconds()
+age = (now_utc - quotes_timestamp_utc).total_seconds()
 if age > 5:
     raise RuntimeError("stale quotes")
 ```
@@ -42,7 +42,8 @@ sources = {
     "quotes": SourceStatus(
         provider="quotes",
         freshness=SourceFreshness.FRESH,
-        last_update_utc=datetime(2026, 5, 12, 13, 59, 50, tzinfo=timezone.utc),
+        timestamp_utc=datetime(2026, 5, 12, 13, 59, 50, tzinfo=timezone.utc),
+        timestamp_name="vendor_updated_at",
     )
 }
 

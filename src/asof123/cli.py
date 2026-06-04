@@ -140,7 +140,7 @@ def _add_resolve_args(p: argparse.ArgumentParser) -> None:
         "--max-age-seconds",
         type=_parse_positive_int,
         default=None,
-        help="Default max age in seconds for sources with last_update_utc.",
+        help="Default max age in seconds for sources with timestamp_utc.",
     )
     p.add_argument(
         "--max-age-source",

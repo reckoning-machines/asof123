@@ -104,6 +104,27 @@ def test_make_snapshot_returns_valid_as_of_snapshot():
     int(snap.content_hash, 16)  # raises if not valid hex
 
 
+def test_snapshot_persists_source_timestamp_authority():
+    timestamp = datetime(2026, 5, 12, 13, 44, 58, tzinfo=timezone.utc)
+    asof = _asof(
+        sources={
+            "quotes": SourceStatus(
+                provider="quotes",
+                freshness=SourceFreshness.FRESH,
+                timestamp_utc=timestamp,
+                timestamp_name="vendor_updated_at",
+            )
+        }
+    )
+
+    snap = make_snapshot(asof, "timestamp-authority")
+    payload = snap.model_dump(mode="json")
+
+    status = payload["asof"]["sources"]["quotes"]
+    assert status["timestamp_utc"].startswith("2026-05-12T13:44:58")
+    assert status["timestamp_name"] == "vendor_updated_at"
+
+
 def test_content_hash_deterministic_for_same_context():
     asof = _asof()
     snap_a = make_snapshot(asof, "a")

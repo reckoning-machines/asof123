@@ -14,7 +14,7 @@ cutoff.
 ## Code People Usually Write
 
 ```python
-if source_last_update_utc > knowledge_cutoff_utc:
+if source_timestamp_utc > knowledge_cutoff_utc:
     usable = False
 else:
     usable = True
@@ -41,7 +41,8 @@ sources = {
     "warehouse": SourceStatus(
         provider="warehouse",
         freshness=SourceFreshness.FRESH,
-        last_update_utc=datetime(2026, 2, 11, 1, 0, 0, tzinfo=timezone.utc),
+        timestamp_utc=datetime(2026, 2, 11, 1, 0, 0, tzinfo=timezone.utc),
+        timestamp_name="warehouse_loaded_at",
     )
 }
 
@@ -78,7 +79,7 @@ API:
 ## What The Result Means
 
 For `REPLAY` and `HISTORICAL`, `SourcePolicy` marks a source as
-`NOT_PUBLISHED` when `last_update_utc` is after `knowledge_cutoff_utc`. Equality
+`NOT_PUBLISHED` when `timestamp_utc` is after `knowledge_cutoff_utc`. Equality
 at the cutoff is admissible. This pins replay safety without building a replay
 engine.
 
@@ -87,4 +88,3 @@ engine.
 asof123 does not store historical data, run backtests, persist replay sessions,
 or reconstruct arbitrary warehouse state. It evaluates the source facts and
 cutoff timestamps supplied by the caller.
-

@@ -100,7 +100,8 @@ def test_apply_source_policy_marks_replay_source_after_cutoff_not_published():
     source = SourceStatus(
         provider="warehouse",
         freshness=SourceFreshness.FRESH,
-        last_update_utc=PAST + timedelta(hours=1),
+        timestamp_utc=PAST + timedelta(hours=1),
+        timestamp_name="warehouse_loaded_at",
     )
 
     result = apply_source_policy(
@@ -115,13 +116,16 @@ def test_apply_source_policy_marks_replay_source_after_cutoff_not_published():
     assert status.freshness is SourceFreshness.NOT_PUBLISHED
     assert status.reason_code == "SOURCE_NOT_ADMISSIBLE"
     assert status.metadata["policy"]["previous_freshness"] == "FRESH"
+    assert "timestamp_utc" in (status.explanation or "")
+    assert status.timestamp_name == "warehouse_loaded_at"
 
 
 def test_apply_source_policy_marks_old_source_stale():
     source = SourceStatus(
         provider="quotes",
         freshness=SourceFreshness.FRESH,
-        last_update_utc=NOW - timedelta(minutes=5),
+        timestamp_utc=NOW - timedelta(minutes=5),
+        timestamp_name="vendor_updated_at",
     )
 
     result = apply_source_policy(
@@ -134,6 +138,7 @@ def test_apply_source_policy_marks_old_source_stale():
 
     assert result["quotes"].freshness is SourceFreshness.STALE
     assert result["quotes"].reason_code == "SOURCE_STALE"
+    assert result["quotes"].timestamp_name == "vendor_updated_at"
 
 
 def test_apply_source_policy_preserves_provider_diagnostics_in_metadata():

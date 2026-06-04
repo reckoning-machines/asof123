@@ -150,11 +150,40 @@ class SourceStatus(BaseModel):
 
     provider: Optional[str] = None
     freshness: SourceFreshness
+    timestamp_utc: Optional[datetime] = None
+    timestamp_name: Optional[str] = None
     last_update_utc: Optional[datetime] = None
     expected_publication_utc: Optional[datetime] = None
     reason_code: Optional[str] = None
     explanation: Optional[str] = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_authority_timestamp(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        payload = dict(data)
+        timestamp_utc = payload.get("timestamp_utc")
+        last_update_utc = payload.get("last_update_utc")
+        if timestamp_utc is None and last_update_utc is not None:
+            payload["timestamp_utc"] = last_update_utc
+        elif last_update_utc is None and timestamp_utc is not None:
+            payload["last_update_utc"] = timestamp_utc
+        return payload
+
+    @model_validator(mode="after")
+    def _check_authority_timestamp_consistency(self):
+        if (
+            self.timestamp_utc is not None
+            and self.last_update_utc is not None
+            and self.timestamp_utc != self.last_update_utc
+        ):
+            raise ValueError(
+                "timestamp_utc and last_update_utc must match when both "
+                "are provided"
+            )
+        return self
 
     @field_validator("provider")
     @classmethod
@@ -163,12 +192,19 @@ class SourceStatus(BaseModel):
             raise ValueError("provider, if present, must be a non-empty string")
         return v
 
-    @field_validator("last_update_utc", "expected_publication_utc")
+    @field_validator("timestamp_utc", "last_update_utc", "expected_publication_utc")
     @classmethod
     def _check_utc(cls, v: Optional[datetime], info: ValidationInfo) -> Optional[datetime]:
         if v is None:
             return v
         return _require_utc(v, info.field_name or "datetime")
+
+    @field_validator("timestamp_name")
+    @classmethod
+    def _check_timestamp_name(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and not v:
+            raise ValueError("timestamp_name, if present, must be a non-empty string")
+        return v
 
     @field_validator("metadata")
     @classmethod

@@ -19,6 +19,8 @@ resolves temporal meaning from facts your systems already report.
   weekend, holiday, or closed using the calendar boundary.
 - [Stale Quotes](stale_quotes.md): make quote freshness checks explicit with
   `SourcePolicy`.
+- [Source Timestamp Authority](source_timestamp_authority.md): declare which
+  source timestamp field is authoritative for freshness and replay checks.
 - [Replay Safety](replay_safety.md): prevent replay and historical reads from
   seeing future source updates.
 - [Canonical Close](canonical_close.md): fail closed unless supplied official

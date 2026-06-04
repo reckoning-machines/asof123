@@ -184,8 +184,9 @@ The initial SourceFreshness values are:
 - NOT_PUBLISHED
 
 A SourceStatus carries one SourceFreshness value plus optional metadata
-such as the last observed update instant, the expected publication time,
-and the SourceProvider identity.
+such as the authority timestamp used for freshness and admissibility checks,
+the source field that produced it, the expected publication time, and the
+SourceProvider identity.
 
 ## 7. Required Initial Execution States
 
@@ -367,7 +368,7 @@ Concretely:
   resolved SourceStatus must be STALE with reason_code=SOURCE_STALE unless
   the provider has already reported a stronger fail-closed state such as
   FAILED, MISSING, STALE, or NOT_PUBLISHED.
-- If a REPLAY or HISTORICAL source reports last_update_utc after
+- If a REPLAY or HISTORICAL source reports timestamp_utc after
   knowledge_cutoff_utc, SourcePolicy must mark it NOT_PUBLISHED with
   reason_code=SOURCE_NOT_ADMISSIBLE. Equality at the cutoff is admissible.
 - If a MarketCalendar is unknown, the resolver must fail closed with an

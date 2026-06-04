@@ -69,7 +69,8 @@ def test_resolve_with_source_file_includes_source_status(tmp_path, capsys):
             {
                 "provider": "quotes_feed",
                 "freshness": "FRESH",
-                "last_update_utc": "2026-05-12T12:00:00Z",
+                "timestamp_utc": "2026-05-12T12:00:00Z",
+                "timestamp_name": "vendor_updated_at",
             }
         )
     )
@@ -88,6 +89,7 @@ def test_resolve_with_source_file_includes_source_status(tmp_path, capsys):
     assert "quotes_feed" in body["sources"]
     assert body["sources"]["quotes_feed"]["freshness"] == "FRESH"
     assert body["sources"]["quotes_feed"]["provider"] == "quotes_feed"
+    assert body["sources"]["quotes_feed"]["timestamp_name"] == "vendor_updated_at"
 
 
 def test_resolve_required_source_adds_missing_status(capsys):

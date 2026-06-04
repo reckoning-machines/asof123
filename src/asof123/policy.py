@@ -56,11 +56,11 @@ class SourcePolicy(BaseModel):
     - `required_sources`: source names that must appear in the resolved
       AsOf. Missing required sources become explicit `MISSING` statuses.
     - `max_age_seconds`: default maximum age for any source with
-      `last_update_utc`.
+      `timestamp_utc`.
     - `max_age_seconds_by_source`: per-source maximum age overrides.
 
     Knowledge-cutoff admissibility is implicit for `REPLAY` and `HISTORICAL`:
-    if a source reports `last_update_utc > knowledge_cutoff_utc`, the resolver
+    if a source reports `timestamp_utc > knowledge_cutoff_utc`, the resolver
     marks that source `NOT_PUBLISHED` with reason metadata under this policy.
     """
 
@@ -150,7 +150,7 @@ def apply_source_policy(
     - Input `sources` and contained `SourceStatus` instances are not mutated.
     - Missing required sources become explicit `MISSING` statuses.
     - Cutoff admissibility applies only to `REPLAY` and `HISTORICAL`.
-    - Max-age checks skip sources without `last_update_utc` and preserve
+    - Max-age checks skip sources without `timestamp_utc` and preserve
       provider-supplied `FAILED`, `MISSING`, `STALE`, and `NOT_PUBLISHED`.
     """
     resolved = dict(sources)
@@ -167,16 +167,16 @@ def apply_source_policy(
     for name, status in list(resolved.items()):
         if (
             perspective in (Perspective.REPLAY, Perspective.HISTORICAL)
-            and status.last_update_utc is not None
-            and status.last_update_utc > knowledge_cutoff_utc
+            and status.timestamp_utc is not None
+            and status.timestamp_utc > knowledge_cutoff_utc
         ):
             resolved[name] = _with_source_policy_status(
                 status,
                 freshness=SourceFreshness.NOT_PUBLISHED,
                 reason_code=ErrorReasonCode.SOURCE_NOT_ADMISSIBLE,
                 explanation=(
-                    f"Source {name!r} last_update_utc="
-                    f"{status.last_update_utc.isoformat()} is after "
+                    f"Source {name!r} timestamp_utc="
+                    f"{status.timestamp_utc.isoformat()} is after "
                     f"knowledge_cutoff_utc={knowledge_cutoff_utc.isoformat()}"
                 ),
             )
@@ -185,7 +185,7 @@ def apply_source_policy(
         max_age_seconds = policy.max_age_for(name)
         if (
             max_age_seconds is not None
-            and status.last_update_utc is not None
+            and status.timestamp_utc is not None
             and status.freshness not in (
                 SourceFreshness.FAILED,
                 SourceFreshness.MISSING,
@@ -193,7 +193,7 @@ def apply_source_policy(
                 SourceFreshness.NOT_PUBLISHED,
             )
         ):
-            age_seconds = (now_utc - status.last_update_utc).total_seconds()
+            age_seconds = (now_utc - status.timestamp_utc).total_seconds()
             if age_seconds > max_age_seconds:
                 resolved[name] = _with_source_policy_status(
                     status,

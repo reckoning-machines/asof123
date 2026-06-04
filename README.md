@@ -4,6 +4,8 @@ asof123 is a temporal authority for institutional systems.
 
 External systems report facts. asof123 resolves temporal meaning.
 
+Most Wall Street bugs are secretly "as of" bugs.
+
 If you have ever copied one of these checks into a notebook, ETL task, replay
 job, dashboard, report runner, or trading script, this library is for you:
 

@@ -183,6 +183,8 @@ class AsOf(BaseModel):
     perspective: Perspective
     market: str
     market_timezone: str
+    market_datetime: Optional[datetime] = None
+    market_date: Optional[date] = None
     business_date: date
     market_phase: MarketPhase
     knowledge_cutoff_utc: datetime
@@ -198,6 +200,19 @@ class AsOf(BaseModel):
     @classmethod
     def _check_utc(cls, v: datetime, info: ValidationInfo) -> datetime:
         return _require_utc(v, info.field_name or "datetime")
+
+    @field_validator("market_datetime")
+    @classmethod
+    def _check_market_datetime(
+        cls, v: Optional[datetime], info: ValidationInfo
+    ) -> Optional[datetime]:
+        if v is None:
+            return v
+        if v.tzinfo is None or v.utcoffset() is None:
+            raise ValueError(
+                f"{info.field_name or 'market_datetime'} must be timezone-aware"
+            )
+        return v
 
     @field_validator("market")
     @classmethod
@@ -219,6 +234,28 @@ class AsOf(BaseModel):
 
     @model_validator(mode="after")
     def _check_fail_closed(self) -> "AsOf":
+        derived_market_datetime = self.resolved_at_utc.astimezone(
+            ZoneInfo(self.market_timezone)
+        )
+        derived_market_date = derived_market_datetime.date()
+        if self.market_datetime is None:
+            object.__setattr__(
+                self, "market_datetime", derived_market_datetime
+            )
+        elif self.market_datetime.isoformat() != derived_market_datetime.isoformat():
+            raise ValueError(
+                "market_datetime is derived from resolved_at_utc and "
+                "market_timezone; caller-supplied values must match the "
+                "derived market-local projection"
+            )
+        if self.market_date is None:
+            object.__setattr__(self, "market_date", derived_market_date)
+        elif self.market_date != derived_market_date:
+            raise ValueError(
+                "market_date is derived from resolved_at_utc and "
+                "market_timezone; caller-supplied values must match the "
+                "derived market-local date"
+            )
         if (
             self.perspective == Perspective.CANONICAL
             and self.canonical_state != CanonicalState.CANONICAL

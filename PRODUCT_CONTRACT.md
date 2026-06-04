@@ -290,6 +290,8 @@ fail closed; it must never silently return PROVISIONAL.
 - No API response may expose a market_phase, business_date, or any
   market-relative field without also exposing the market and
   market_timezone that were used to resolve it.
+- Public AsOf responses may expose market_datetime and market_date only as
+  deterministic projections tied to the same market and market_timezone.
 - If the requested market code has no recognized MarketCalendar, the
   resolver must fail closed per section 13. It must not fall back to a
   default market.
@@ -305,6 +307,27 @@ fail closed; it must never silently return PROVISIONAL.
   every stored instant must be UTC.
 - Conversions between UTC and a market timezone must go through a named
   MarketCalendar. Ad hoc offset arithmetic is not acceptable.
+
+## 12A. Market Time Projection
+
+AsOf may expose market-local convenience projections for human interpretation:
+
+- market_datetime;
+- market_date.
+
+market_datetime and market_date are deterministic projections derived from:
+
+- resolved_at_utc;
+- market_timezone.
+
+They are convenience outputs. They are not independent sources of temporal
+truth, not caller-controlled authorities, and not replacements for the core
+resolved business fields.
+
+Callers must branch on resolved business meaning, including business_date,
+market_phase, price_basis, publication_state, canonical_state, and
+execution_state. They must not infer those fields from browser-local clock
+math, ad hoc timezone conversion, or display labels such as ET.
 
 ## 13. Fail-Closed Rule
 
@@ -862,6 +885,8 @@ The current XNYS calendar is a minimal reference calendar only. It guarantees:
 - market_timezone = America/New_York;
 - UTC input validation for calendar methods;
 - conversion through ZoneInfo for America/New_York;
+- market_datetime and market_date projection from resolved_at_utc plus
+  market_timezone;
 - local-date business_date semantics;
 - deterministic weekday handling;
 - deterministic regular-session phase boundaries;

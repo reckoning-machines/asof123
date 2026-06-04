@@ -10,6 +10,7 @@ JSON or store incomplete as-of fields.
 
 ```python
 payload = {
+    "market_datetime": str(market_datetime),
     "business_date": str(business_date),
     "phase": phase,
     "sources": sources,
@@ -41,6 +42,7 @@ snapshot = make_snapshot(asof, snapshot_id="intent-2026-05-12T14:00:00Z")
 
 print(snapshot.snapshot_schema_version)
 print(snapshot.semantic_contract_version)
+print(snapshot.asof.market_datetime)
 print(snapshot.content_hash)
 ```
 
@@ -61,6 +63,10 @@ asof123 snapshot \
 over the semantic payload: schema version, semantic contract version, and the
 resolved `AsOf`. Audit-only fields such as `snapshot_id` and
 `captured_at_utc` do not change the content hash.
+
+The embedded `AsOf` includes `resolved_at_utc` plus the derived
+`market_datetime` and `market_date` convenience projections, so audit readers
+can inspect both UTC infrastructure time and market-local display time.
 
 ## What asof123 Does Not Do
 

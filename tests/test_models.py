@@ -81,9 +81,55 @@ def test_valid_asof_xnys_new_york():
     asof = _valid_asof()
     assert asof.market == "XNYS"
     assert asof.market_timezone == "America/New_York"
+    assert asof.market_datetime.isoformat() == "2026-05-12T09:45:00-04:00"
+    assert asof.market_date == date(2026, 5, 12)
     assert asof.perspective is Perspective.LIVE
     assert asof.market_phase is MarketPhase.MARKET_OPEN
     assert "equities_quotes" in asof.sources
+
+
+def test_market_datetime_and_market_date_are_derived_from_utc_and_timezone():
+    asof = _valid_asof(
+        resolved_at_utc=datetime(2026, 5, 13, 4, 0, 0, tzinfo=timezone.utc),
+        knowledge_cutoff_utc=datetime(2026, 5, 13, 4, 0, 0, tzinfo=timezone.utc),
+        business_date=date(2026, 5, 13),
+        market_phase=MarketPhase.PRE_OPEN,
+        price_basis=PriceBasis.PRIOR_CLOSE,
+    )
+    assert asof.market_datetime.isoformat() == "2026-05-13T00:00:00-04:00"
+    assert asof.market_date == date(2026, 5, 13)
+
+
+def test_market_datetime_spring_dst_offset_is_derived():
+    asof = _valid_asof(
+        resolved_at_utc=datetime(2026, 3, 9, 14, 0, 0, tzinfo=timezone.utc),
+        knowledge_cutoff_utc=datetime(2026, 3, 9, 14, 0, 0, tzinfo=timezone.utc),
+        business_date=date(2026, 3, 9),
+    )
+    assert asof.market_datetime.isoformat() == "2026-03-09T10:00:00-04:00"
+    assert asof.market_date == date(2026, 3, 9)
+
+
+def test_market_datetime_fall_dst_offset_is_derived():
+    asof = _valid_asof(
+        resolved_at_utc=datetime(2026, 11, 2, 15, 0, 0, tzinfo=timezone.utc),
+        knowledge_cutoff_utc=datetime(2026, 11, 2, 15, 0, 0, tzinfo=timezone.utc),
+        business_date=date(2026, 11, 2),
+    )
+    assert asof.market_datetime.isoformat() == "2026-11-02T10:00:00-05:00"
+    assert asof.market_date == date(2026, 11, 2)
+
+
+def test_mismatched_market_datetime_rejected():
+    with pytest.raises(ValidationError, match="market_datetime is derived"):
+        _valid_asof(
+            market_datetime=datetime(2026, 5, 12, 13, 45, 0, tzinfo=timezone.utc),
+        )
+
+
+def test_mismatched_market_date_rejected():
+    with pytest.raises(ValidationError, match="market_date is derived"):
+        _valid_asof(market_date=date(2026, 5, 13))
 
 
 def test_market_identity_valid():

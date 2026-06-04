@@ -37,6 +37,8 @@ asof = resolve(
     calendars={"XNYS": XNYSCalendar()},
 )
 
+print(asof.market_datetime)
+
 if asof.market_phase != "MARKET_OPEN":
     raise RuntimeError(f"Not a market-open AsOf: {asof.market_phase}")
 ```
@@ -60,6 +62,9 @@ asof = resolve(
 `asof.market_phase` is resolved by the supplied calendar. Downstream code can
 branch on the contract value `MARKET_OPEN` instead of reimplementing local
 timezone and session logic.
+
+`asof.market_datetime` is available for display and logs, but it is not the
+source of market-open truth. Branch on `asof.market_phase`.
 
 ## What asof123 Does Not Do
 

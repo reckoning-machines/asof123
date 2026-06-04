@@ -38,6 +38,9 @@ python -m pytest -q
 
 ## Resolve An AsOf
 
+Infrastructure timestamps stay in UTC. Market-facing output is projected from
+`resolved_at_utc` through `market_timezone`.
+
 Python:
 
 ```python
@@ -55,10 +58,24 @@ asof = resolve(
     calendars={"XNYS": XNYSCalendar()},
 )
 
+print(asof.resolved_at_utc)
+print(asof.market_datetime)
+print(asof.market_date)
 print(asof.business_date)
 print(asof.market_phase)
 print(asof.price_basis)
 ```
+
+For the pinned XNYS example above:
+
+- `resolved_at_utc` is the UTC audit instant: `2026-05-12 14:00:00+00:00`;
+- `market_datetime` is the convenience New York projection:
+  `2026-05-12 10:00:00-04:00`;
+- `market_date` is the market-local calendar date: `2026-05-12`;
+- `business_date` is the calendar-resolved business date: `2026-05-12`.
+
+`market_datetime` and `market_date` are derived from `resolved_at_utc` plus
+`market_timezone`. They are not independent sources of temporal truth.
 
 CLI:
 
@@ -158,7 +175,9 @@ Recipes cover:
 - replay safety;
 - canonical close;
 - pre-trade checks;
-- snapshot audit.
+- snapshot audit;
+- UTC everywhere, ET nowhere;
+- browser-safe market time display.
 
 ## Contract
 

@@ -36,6 +36,9 @@ request = AsOfRequest(
 
 asof = resolve(request, calendars={"XNYS": XNYSCalendar()})
 
+print(asof.resolved_at_utc)
+print(asof.market_datetime)
+print(asof.market_date)
 print(asof.business_date)
 print(asof.market_phase)
 ```
@@ -52,9 +55,11 @@ asof123 resolve \
 
 ## What The Result Means
 
-`asof.business_date` is the business date resolved by the supplied market
-calendar for the requested UTC instant. `asof.market_phase` tells the caller
-whether the market is pre-open, open, post-close, weekend, holiday, or closed.
+`asof.market_datetime` and `asof.market_date` are convenience projections
+derived from `resolved_at_utc` and `market_timezone`. `asof.business_date` is
+the business date resolved by the supplied market calendar for the requested
+UTC instant. `asof.market_phase` tells the caller whether the market is
+pre-open, open, post-close, weekend, holiday, or closed.
 
 The caller gets a validated `AsOf` instead of local date booleans.
 
@@ -64,4 +69,3 @@ asof123 does not run the ETL job, persist the result, schedule the report, or
 act as a production exchange-calendar authority. The open-source package ships
 a minimal `XNYSCalendar` reference calendar; production-grade holiday coverage
 is still a caller responsibility.
-

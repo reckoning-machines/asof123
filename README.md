@@ -50,6 +50,9 @@ disagree, the contract wins.
 
 - Resolve market business date and market phase for a request.
 - Reject naive and non-UTC datetimes at the boundary.
+- Convert UTC infrastructure timestamps into market-local time without
+  scattering timezone logic across Python, SQL, ETL jobs, dashboards, and
+  browser code.
 - Normalize provider failures into `SourceStatus(freshness=FAILED)`.
 - Require sources such as `quotes`, `locates`, `warehouse`, or
   `official_close`.
@@ -62,6 +65,13 @@ disagree, the contract wins.
 - Use the same semantics from Python, CLI, or the reference FastAPI app.
 
 ## Minimal Python
+
+Infrastructure runs in UTC. Humans operate in market time.
+
+`AsOf` exposes both:
+
+- `resolved_at_utc` for auditability;
+- `market_datetime` and `market_date` for human market-time interpretation.
 
 ```python
 from datetime import datetime, timezone
@@ -78,10 +88,19 @@ asof = resolve(
     calendars={"XNYS": XNYSCalendar()},
 )
 
+print(asof.resolved_at_utc)
+print(asof.market_datetime)
+print(asof.market_date)
 print(asof.business_date)
 print(asof.market_phase)
 print(asof.price_basis)
 ```
+
+`market_datetime` is derived from `resolved_at_utc` and `market_timezone`. It is
+convenience output, not a second source of truth. Callers should branch on
+resolved business meaning such as `market_phase`, `business_date`,
+`price_basis`, `publication_state`, and `canonical_state`, not on browser-local
+clock math.
 
 ## SourcePolicy
 
@@ -135,7 +154,9 @@ Start there for:
 - replay safety;
 - canonical close;
 - pre-trade checks;
-- snapshot audit.
+- snapshot audit;
+- UTC everywhere, ET nowhere;
+- browser-safe market time display.
 
 `docs/quickstart.md` has the shortest clone-to-running path.
 

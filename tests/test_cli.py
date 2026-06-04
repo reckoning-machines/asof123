@@ -42,6 +42,24 @@ def test_resolve_pre_trade_intent_with_pinned_utc_yields_pre_open(capsys):
     assert body["perspective"] == "PRE_TRADE_INTENT"
     assert body["market_phase"] == "PRE_OPEN"
     assert body["price_basis"] == "PRIOR_CLOSE"
+    assert body["market_datetime"] == "2026-05-12T08:00:00-04:00"
+    assert body["market_date"] == "2026-05-12"
+
+
+def test_resolve_market_datetime_crosses_utc_date_boundary_in_json(capsys):
+    exit_code = main([
+        "resolve",
+        "--perspective", "PRE_TRADE_INTENT",
+        "--as-of-utc", "2026-05-13T04:00:00Z",
+        "--knowledge-cutoff-utc", "2026-05-13T04:00:00Z",
+    ])
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    body = json.loads(captured.out)
+    assert body["resolved_at_utc"].startswith("2026-05-13T04:00:00")
+    assert body["market_datetime"] == "2026-05-13T00:00:00-04:00"
+    assert body["market_date"] == "2026-05-13"
+    assert body["business_date"] == "2026-05-13"
 
 
 def test_resolve_with_source_file_includes_source_status(tmp_path, capsys):

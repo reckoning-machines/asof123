@@ -114,6 +114,76 @@ def test_post_asof_resolve_with_replay_pinned_utc_returns_valid_response():
     assert body["perspective"] == "REPLAY"
     assert body["resolved_at_utc"].startswith("2026-02-10T21:00:00")
     assert body["knowledge_cutoff_utc"].startswith("2026-02-10T21:00:00")
+    assert body["market_datetime"] == "2026-02-10T16:00:00-05:00"
+    assert body["market_date"] == "2026-02-10"
+
+
+def test_post_asof_resolve_market_datetime_crosses_utc_date_boundary():
+    app = create_app()
+    client = TestClient(app)
+    payload = {
+        "perspective": "PRE_TRADE_INTENT",
+        "market": "XNYS",
+        "market_timezone": "America/New_York",
+        "as_of_utc": "2026-05-13T04:00:00Z",
+        "knowledge_cutoff_utc": "2026-05-13T04:00:00Z",
+    }
+    response = client.post("/asof/resolve", json=payload)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["resolved_at_utc"].startswith("2026-05-13T04:00:00")
+    assert body["market_datetime"] == "2026-05-13T00:00:00-04:00"
+    assert body["market_date"] == "2026-05-13"
+    assert body["business_date"] == "2026-05-13"
+
+
+def test_post_asof_resolve_market_datetime_respects_dst_offsets():
+    app = create_app()
+    client = TestClient(app)
+
+    spring = client.post(
+        "/asof/resolve",
+        json={
+            "perspective": "PRE_TRADE_INTENT",
+            "market": "XNYS",
+            "market_timezone": "America/New_York",
+            "as_of_utc": "2026-03-09T14:00:00Z",
+            "knowledge_cutoff_utc": "2026-03-09T14:00:00Z",
+        },
+    )
+    assert spring.status_code == 200, spring.text
+    assert spring.json()["market_datetime"] == "2026-03-09T10:00:00-04:00"
+
+    fall = client.post(
+        "/asof/resolve",
+        json={
+            "perspective": "PRE_TRADE_INTENT",
+            "market": "XNYS",
+            "market_timezone": "America/New_York",
+            "as_of_utc": "2026-11-02T15:00:00Z",
+            "knowledge_cutoff_utc": "2026-11-02T15:00:00Z",
+        },
+    )
+    assert fall.status_code == 200, fall.text
+    assert fall.json()["market_datetime"] == "2026-11-02T10:00:00-05:00"
+
+
+def test_post_asof_resolve_rejects_est_at_api_boundary():
+    app = create_app()
+    client = TestClient(app)
+    response = client.post(
+        "/asof/resolve",
+        json={
+            "perspective": "LIVE",
+            "market": "XNYS",
+            "market_timezone": "EST",
+        },
+    )
+    assert response.status_code == 422
+    body = response.json()
+    assert body["error"] == "VALIDATION_ERROR"
+    assert body["reason_code"] == "VALIDATION_ERROR"
+    assert "EST" in response.text
 
 
 def test_post_asof_resolve_policy_wrapper_without_policy_is_backward_compatible():

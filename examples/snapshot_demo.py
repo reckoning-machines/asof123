@@ -7,9 +7,10 @@ Run from the repo root after `pip install -e .`:
 The script runs the same resolve flow as `resolve_demo.py` and wraps
 the result in an `AsOfSnapshot` via `make_snapshot(asof,
 snapshot_id="demo_snapshot")`. The snapshot's `content_hash` is a
-deterministic SHA256 over the versioned snapshot payload. There is no
-argparse, no network, no environment loading, and no persistence in
-this script.
+deterministic SHA256 over the versioned snapshot payload, including the
+AsOf's UTC instant and derived market-time projection. There is no
+argparse, no network, no environment loading, and no persistence in this
+script.
 """
 
 from __future__ import annotations

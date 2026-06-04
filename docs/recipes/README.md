@@ -4,6 +4,8 @@ These recipes show practical integration patterns for Wall Street data
 scientists, quant researchers, ETL engineers, and execution engineers.
 
 The goal is simple: replace local time-state checks with `asof123` primitives.
+UTC remains the storage and transport boundary; `market_datetime` and
+`market_date` are derived convenience projections for market-local display.
 
 `asof123` does not fetch proprietary data, schedule jobs, run workflows, store
 your warehouse, operate an OMS/EMS/PMS, route orders, or talk to brokers. It
@@ -25,6 +27,11 @@ resolves temporal meaning from facts your systems already report.
   for quote, locate, and basket-file readiness.
 - [Snapshot Audit](snapshot_audit.md): create deterministic audit identity for a
   resolved AsOf.
+- [UTC Everywhere, ET Nowhere](utc_everywhere_et_nowhere.md): keep machine
+  instants in UTC and use IANA market timezones instead of `EST`.
+- [Browser-safe Market Time Display](browser_safe_market_time_display.md):
+  display server-resolved market time without moving business logic into
+  JavaScript.
 
 ## Public APIs Used
 

@@ -6,10 +6,11 @@ Run from the repo root after `pip install -e .`:
 
 The script wires a single `FileProvider` (reading from
 `examples/source_status_quotes.json`) to the in-process resolver and
-prints the resulting `AsOf` as pretty-printed JSON. There
-is no argparse, no network, no environment loading, and no persistence
-in this script. It is intended as a 30-line reference for how the
-library composes.
+prints the resulting `AsOf` as pretty-printed JSON, including
+`resolved_at_utc`, derived `market_datetime`, and derived `market_date`.
+There is no argparse, no network, no environment loading, and no
+persistence in this script. It is intended as a small reference for how
+the library composes.
 """
 
 from __future__ import annotations
